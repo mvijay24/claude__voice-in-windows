@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Project specific
+settings.json
+*.wav
+*.mp3
+*.m4a
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Temp files
+temp/
+tmp/
