@@ -188,7 +188,10 @@ class WhisperTray:
         self.output_mode = self.settings.get('output_mode', 'hinglish')
         self.api_key = self.settings.get('api_key', '')
         self.debug_enabled = self.settings.get('debug_enabled', False)
+        self.session_summary_enabled = self.settings.get('session_summary_enabled', False)
         self.debug_window = None
+        self.current_session = None
+        self.session_count = 0
         
         # Initialize debug window if enabled
         if self.debug_enabled:
@@ -197,6 +200,7 @@ class WhisperTray:
         self.log("WhisperTray initialized", "success")
         self.log(f"Output mode: {self.output_mode}", "info")
         self.log(f"Debug mode: {'Enabled' if self.debug_enabled else 'Disabled'}", "info")
+        self.log(f"Session summary: {'Enabled' if self.session_summary_enabled else 'Disabled'}", "info")
         
         # Check API key on startup
         if not self.api_key:
@@ -209,6 +213,15 @@ class WhisperTray:
         """Log a message to the debug window if enabled"""
         if self.debug_enabled and self.debug_window:
             self.debug_window.add_log(message, level)
+            
+        # Also log to current session if session summary is enabled
+        if self.session_summary_enabled and self.current_session:
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            self.current_session['logs'].append({
+                'time': timestamp,
+                'level': level,
+                'message': message
+            })
             
     def load_settings(self):
         """Load settings from file"""
@@ -226,6 +239,7 @@ class WhisperTray:
             self.settings['output_mode'] = self.output_mode
             self.settings['api_key'] = self.api_key
             self.settings['debug_enabled'] = self.debug_enabled
+            self.settings['session_summary_enabled'] = self.session_summary_enabled
             with open('settings.json', 'w') as f:
                 json.dump(self.settings, f, indent=2)
             self.log("Settings saved", "debug")
@@ -390,6 +404,137 @@ class WhisperTray:
         """Show the debug panel if debug is enabled"""
         if self.debug_enabled and self.debug_window:
             self.debug_window.show_window()
+            
+    def toggle_session_summary(self):
+        """Toggle session summary on/off"""
+        self.session_summary_enabled = not self.session_summary_enabled
+        self.save_settings()
+        self.log(f"Session summary {'enabled' if self.session_summary_enabled else 'disabled'}", "info")
+        self.update_menu()
+        
+    def start_session(self):
+        """Start a new recording session"""
+        if self.session_summary_enabled:
+            self.session_count += 1
+            session_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.session_count:03d}"
+            self.current_session = {
+                'id': session_id,
+                'start_time': datetime.now(),
+                'mode': self.output_mode,
+                'logs': [],
+                'audio_duration': 0,
+                'api_response_time': 0,
+                'transcribed_text': None,
+                'paste_success': False,
+                'errors': []
+            }
+            self.log(f"=== SESSION START: {session_id} ===", "info")
+            self.log(f"Mode: {self.output_mode}", "info")
+            
+    def end_session(self):
+        """End current recording session and show summary"""
+        if self.session_summary_enabled and self.current_session:
+            session = self.current_session
+            session['end_time'] = datetime.now()
+            duration = (session['end_time'] - session['start_time']).total_seconds()
+            
+            self.log(f"=== SESSION END: {session['id']} ===", "info")
+            self.log(f"Total duration: {duration:.2f}s", "info")
+            self.log(f"Audio duration: {session['audio_duration']:.2f}s", "info")
+            self.log(f"API response time: {session['api_response_time']:.2f}s", "info")
+            self.log(f"Text received: {'Yes' if session['transcribed_text'] else 'No'}", "info")
+            self.log(f"Paste success: {'Yes' if session['paste_success'] else 'No'}", "info")
+            
+            if session['transcribed_text']:
+                self.log(f"Text preview: {session['transcribed_text'][:50]}...", "debug")
+            
+            if session['errors']:
+                self.log(f"Errors: {len(session['errors'])}", "error")
+                for error in session['errors']:
+                    self.log(f"  - {error}", "error")
+                    
+            # Always show session summary window when enabled
+            self.show_session_summary(session)
+                
+            self.current_session = None
+            
+    def show_session_summary(self, session):
+        """Show session summary in a popup window"""
+        def create_summary():
+            root = tk.Tk()
+            root.withdraw()
+            
+            window = tk.Toplevel(root)
+            window.title(f"Session Summary - {session['id']}")
+            window.geometry("600x400")
+            window.configure(bg='#1a1a1a')
+            window.attributes('-topmost', True)
+            
+            # Header
+            header = tk.Label(window, text=f"Session {session['id']}", 
+                            font=('Arial', 14, 'bold'), bg='#1a1a1a', fg='#14ffec')
+            header.pack(pady=10)
+            
+            # Info frame
+            info_frame = tk.Frame(window, bg='#1a1a1a')
+            info_frame.pack(fill='both', expand=True, padx=20, pady=10)
+            
+            # Session details
+            details = [
+                f"Mode: {session['mode']}",
+                f"Audio Duration: {session['audio_duration']:.2f}s",
+                f"API Response Time: {session['api_response_time']:.2f}s",
+                f"Text Received: {'✓' if session['transcribed_text'] else '✗'}",
+                f"Paste Success: {'✓' if session['paste_success'] else '✗'}",
+                "",
+                "Transcribed Text:",
+                session['transcribed_text'] if session['transcribed_text'] else "No text received"
+            ]
+            
+            for detail in details:
+                label = tk.Label(info_frame, text=detail, font=('Arial', 10),
+                               bg='#1a1a1a', fg='white' if not detail.startswith("✗") else '#ff0000',
+                               anchor='w', wraplength=550, justify='left')
+                label.pack(fill='x', pady=2)
+                
+            # Logs frame
+            logs_label = tk.Label(window, text="Session Logs:", font=('Arial', 11, 'bold'),
+                                bg='#1a1a1a', fg='#14ffec')
+            logs_label.pack(pady=(10, 5))
+            
+            # Logs text widget
+            logs_frame = tk.Frame(window, bg='#2a2a2a')
+            logs_frame.pack(fill='both', expand=True, padx=20, pady=(0, 20))
+            
+            logs_text = tk.Text(logs_frame, bg='#2a2a2a', fg='white', font=('Consolas', 9),
+                              wrap='word', height=10)
+            logs_text.pack(fill='both', expand=True)
+            
+            # Add logs
+            for log in session['logs']:
+                color = {
+                    'info': '#00ff00',
+                    'warning': '#ffff00', 
+                    'error': '#ff0000',
+                    'debug': '#00ffff',
+                    'success': '#00ff88'
+                }.get(log['level'], '#ffffff')
+                
+                logs_text.insert('end', f"[{log['time']}] ", 'time')
+                logs_text.insert('end', f"{log['message']}\n", log['level'])
+                logs_text.tag_config(log['level'], foreground=color)
+                logs_text.tag_config('time', foreground='#808080')
+                
+            logs_text.config(state='disabled')
+            
+            # Close button
+            close_btn = tk.Button(window, text="Close", command=lambda: [window.destroy(), root.destroy()],
+                                bg='#3a3a3a', fg='white', font=('Arial', 10), width=10)
+            close_btn.pack(pady=10)
+            
+            root.mainloop()
+            
+        threading.Thread(target=create_summary, daemon=True).start()
         
     def update_menu(self):
         """Update tray menu with current settings"""
@@ -409,6 +554,7 @@ class WhisperTray:
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem(f"🐛 {'✓' if self.debug_enabled else '  '} Debug Panel", self.toggle_debug),
             pystray.MenuItem("Show Debug Panel", self.show_debug_panel, enabled=self.debug_enabled),
+            pystray.MenuItem(f"📊 {'✓' if self.session_summary_enabled else '  '} Session Summary", self.toggle_session_summary),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("🟢 Ready | 🔴 Recording | 🔵 Processing", lambda: None, enabled=False),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
@@ -557,6 +703,10 @@ class WhisperTray:
         duration = len(audio) / self.sample_rate
         self.log(f"Recording stopped. Duration: {duration:.2f}s", "info")
         
+        # Store audio duration in session
+        if self.current_session:
+            self.current_session['audio_duration'] = duration
+        
         # Save to temp file
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
             temp_file = f.name
@@ -597,6 +747,8 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             
             self.log(f"Sending API request to OpenAI Whisper", "debug")
             
+            api_start_time = time.time()
+            
             with open(audio_file, 'rb') as f:
                 files = {
                     'file': ('audio.wav', f, 'audio/wav'),
@@ -613,7 +765,13 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                     timeout=60
                 )
                 
-            self.log(f"API response status: {response.status_code}", "debug")
+            api_response_time = time.time() - api_start_time
+            
+            # Store API response time in session
+            if self.current_session:
+                self.current_session['api_response_time'] = api_response_time
+                
+            self.log(f"API response status: {response.status_code} (took {api_response_time:.2f}s)", "debug")
                 
             if response.status_code == 200:
                 text = response.text.strip()
@@ -675,9 +833,13 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 
         except requests.exceptions.Timeout:
             self.log("API request timed out", "error")
+            if self.current_session:
+                self.current_session['errors'].append("API request timed out")
             return None
         except Exception as e:
             self.log(f"Transcription error: {str(e)}", "error")
+            if self.current_session:
+                self.current_session['errors'].append(f"Transcription error: {str(e)}")
             return None
         finally:
             self.processing = False
@@ -772,7 +934,7 @@ Do NOT translate to pure English. Keep the code-switching intact."""
         if not text:
             self.log("No text to paste", "warning")
             self.show_notification("No text to paste!")
-            return
+            return False
             
         try:
             # Copy to clipboard
@@ -784,7 +946,9 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             if clipboard_content != text:
                 self.log("Clipboard verification failed", "error")
                 self.show_notification("Failed to copy to clipboard!")
-                return
+                if self.current_session:
+                    self.current_session['errors'].append("Clipboard verification failed")
+                return False
             
             # Small delay
             time.sleep(0.2)
@@ -792,10 +956,14 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             # Paste
             keyboard.press_and_release('ctrl+v')
             self.log("Text pasted via Ctrl+V", "success")
+            return True
             
         except Exception as e:
             self.log(f"Paste error: {str(e)}", "error")
             self.show_notification(f"Paste failed: {str(e)}")
+            if self.current_session:
+                self.current_session['errors'].append(f"Paste error: {str(e)}")
+            return False
         
     def toggle_recording(self):
         """Start or stop recording"""
@@ -823,6 +991,9 @@ Do NOT translate to pure English. Keep the code-switching intact."""
         """Record, transcribe, and paste"""
         self.log("Process recording started", "debug")
         
+        # Start session tracking
+        self.start_session()
+        
         # Record
         audio_file = self.record_audio()
         
@@ -830,12 +1001,18 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             # Transcribe
             text = self.transcribe_file(audio_file)
             
+            # Store in session
+            if self.current_session:
+                self.current_session['transcribed_text'] = text
+            
             # Clean up
             try:
                 os.unlink(audio_file)
                 self.log(f"Temp file deleted: {audio_file}", "debug")
             except Exception as e:
                 self.log(f"Failed to delete temp file: {e}", "warning")
+                if self.current_session:
+                    self.current_session['errors'].append(f"Temp file cleanup: {e}")
                 
             # Paste
             if text:
@@ -843,11 +1020,19 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 self.show_toast(text)
                 # Small delay before pasting
                 time.sleep(1)
-                self.paste_text(text)
+                paste_success = self.paste_text(text)
+                
+                if self.current_session:
+                    self.current_session['paste_success'] = paste_success
             else:
                 self.log("No text to paste after transcription", "warning")
         else:
             self.log("Recording failed or was cancelled", "warning")
+            if self.current_session:
+                self.current_session['errors'].append("Recording failed or cancelled")
+                
+        # End session and show summary
+        self.end_session()
                 
     def run(self):
         """Run the application"""
