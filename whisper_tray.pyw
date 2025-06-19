@@ -412,6 +412,30 @@ class WhisperTray:
         self.log(f"Session summary {'enabled' if self.session_summary_enabled else 'disabled'}", "info")
         self.update_menu()
         
+        # Show notification about the change
+        if self.session_summary_enabled:
+            self.show_notification("Session Summary ENABLED ✓\n\nA detailed report window will appear after each recording session showing:\n• Audio duration\n• API response time\n• Transcribed text\n• Success/failure status\n• Complete execution logs")
+            
+            # Show a sample summary window
+            sample_session = {
+                'id': 'SAMPLE_SESSION',
+                'mode': self.output_mode,
+                'audio_duration': 2.5,
+                'api_response_time': 1.2,
+                'transcribed_text': 'This is a sample transcription text',
+                'paste_success': True,
+                'errors': [],
+                'logs': [
+                    {'time': '14:30:00.123', 'level': 'info', 'message': 'Session started'},
+                    {'time': '14:30:00.456', 'level': 'info', 'message': 'Recording audio...'},
+                    {'time': '14:30:02.789', 'level': 'success', 'message': 'Text transcribed successfully'},
+                    {'time': '14:30:03.012', 'level': 'info', 'message': 'Text pasted'}
+                ]
+            }
+            self.show_session_summary(sample_session)
+        else:
+            self.show_notification("Session Summary DISABLED")
+        
     def start_session(self):
         """Start a new recording session"""
         if self.session_summary_enabled:
@@ -728,7 +752,7 @@ class WhisperTray:
         try:
             if not self.api_key:
                 self.log("No API key configured", "error")
-                self.show_notification("No API key set! Right-click tray icon to add one.")
+                self.show_notification("No API key set! Right-click tray icon to add one.", "API Key Missing")
                 return None
                 
             headers = {'Authorization': f'Bearer {self.api_key}'}
@@ -845,13 +869,13 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             self.processing = False
             self.update_icon_status('ready')
             
-    def show_notification(self, message):
+    def show_notification(self, message, title="Whisper Paste"):
         """Show a simple notification"""
         root = tk.Tk()
         root.withdraw()
         root.attributes('-topmost', True)
         root.update()
-        messagebox.showwarning("Whisper Paste", message)
+        messagebox.showinfo(title, message)
         root.destroy()
         
     def show_toast(self, text, duration=3000):
