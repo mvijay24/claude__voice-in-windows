@@ -15,8 +15,164 @@ from PIL import Image, ImageDraw
 import signal
 import json
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, scrolledtext
 import webbrowser
+import queue
+
+class DebugWindow:
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = None
+        self.log_queue = queue.Queue()
+        self.stay_on_top = False
+        self.running = True
+        
+    def create_window(self):
+        """Create the debug window"""
+        if self.window and self.window.winfo_exists():
+            self.window.lift()
+            return
+            
+        self.window = tk.Toplevel()
+        self.window.title("Whisper Paste - Debug Panel")
+        self.window.geometry("800x500")
+        self.window.configure(bg='black')
+        
+        # Set window icon if possible
+        try:
+            self.window.iconbitmap(default='')
+        except:
+            pass
+            
+        # Create toolbar frame
+        toolbar = tk.Frame(self.window, bg='#1a1a1a', height=40)
+        toolbar.pack(fill='x', padx=2, pady=2)
+        
+        # Clear button
+        clear_btn = tk.Button(toolbar, text="Clear Logs", command=self.clear_logs,
+                            bg='#2a2a2a', fg='#00ff00', font=('Consolas', 10),
+                            relief='flat', padx=10)
+        clear_btn.pack(side='left', padx=5, pady=5)
+        
+        # Stay on top toggle
+        self.top_var = tk.BooleanVar(value=self.stay_on_top)
+        top_check = tk.Checkbutton(toolbar, text="Stay on Top", variable=self.top_var,
+                                  command=self.toggle_on_top, bg='#1a1a1a', fg='#00ff00',
+                                  font=('Consolas', 10), selectcolor='#1a1a1a',
+                                  activebackground='#1a1a1a', activeforeground='#00ff00')
+        top_check.pack(side='left', padx=20)
+        
+        # Status label
+        self.status_label = tk.Label(toolbar, text="Debug Panel Active", 
+                                   bg='#1a1a1a', fg='#00ff00', font=('Consolas', 10))
+        self.status_label.pack(side='right', padx=10)
+        
+        # Create scrolled text widget
+        self.text_widget = scrolledtext.ScrolledText(
+            self.window, 
+            wrap=tk.WORD,
+            bg='black',
+            fg='#00ff00',
+            font=('Consolas', 10),
+            insertbackground='#00ff00',
+            selectbackground='#00ff00',
+            selectforeground='black',
+            relief='flat',
+            borderwidth=5
+        )
+        self.text_widget.pack(fill='both', expand=True, padx=2, pady=2)
+        
+        # Configure text tags for different log levels
+        self.text_widget.tag_config('timestamp', foreground='#888888')
+        self.text_widget.tag_config('info', foreground='#00ff00')
+        self.text_widget.tag_config('warning', foreground='#ffff00')
+        self.text_widget.tag_config('error', foreground='#ff0000')
+        self.text_widget.tag_config('debug', foreground='#00ffff')
+        self.text_widget.tag_config('success', foreground='#00ff88')
+        
+        # Make text widget read-only
+        self.text_widget.bind("<Key>", lambda e: "break")
+        
+        # Handle window close
+        self.window.protocol("WM_DELETE_WINDOW", self.hide_window)
+        
+        # Start log processor
+        self.process_logs()
+        
+        # Initial log
+        self.parent.log("Debug panel opened", "success")
+        
+    def hide_window(self):
+        """Hide the debug window without destroying it"""
+        if self.window:
+            self.window.withdraw()
+            self.parent.log("Debug panel minimized", "info")
+            
+    def show_window(self):
+        """Show the debug window"""
+        if not self.window or not self.window.winfo_exists():
+            self.create_window()
+        else:
+            self.window.deiconify()
+            self.window.lift()
+            self.parent.log("Debug panel restored", "info")
+            
+    def toggle_on_top(self):
+        """Toggle stay on top"""
+        self.stay_on_top = self.top_var.get()
+        if self.window:
+            self.window.attributes('-topmost', self.stay_on_top)
+            self.parent.log(f"Stay on top: {self.stay_on_top}", "debug")
+            
+    def clear_logs(self):
+        """Clear all logs"""
+        if self.text_widget:
+            self.text_widget.config(state='normal')
+            self.text_widget.delete(1.0, tk.END)
+            self.text_widget.config(state='disabled')
+            self.parent.log("Logs cleared", "info")
+            
+    def add_log(self, message, level='info'):
+        """Add a log entry to the queue"""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        self.log_queue.put((timestamp, message, level))
+        
+    def process_logs(self):
+        """Process log queue and update text widget"""
+        if not self.window or not self.window.winfo_exists():
+            return
+            
+        try:
+            while not self.log_queue.empty():
+                timestamp, message, level = self.log_queue.get_nowait()
+                
+                self.text_widget.config(state='normal')
+                
+                # Insert timestamp
+                self.text_widget.insert(tk.END, f"[{timestamp}] ", 'timestamp')
+                
+                # Insert message with appropriate tag
+                self.text_widget.insert(tk.END, f"{message}\n", level)
+                
+                # Auto-scroll to bottom
+                self.text_widget.see(tk.END)
+                
+                self.text_widget.config(state='disabled')
+                
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"Error processing logs: {e}")
+            
+        # Schedule next update
+        if self.running and self.window and self.window.winfo_exists():
+            self.window.after(50, self.process_logs)
+            
+    def destroy(self):
+        """Destroy the debug window"""
+        self.running = False
+        if self.window and self.window.winfo_exists():
+            self.window.destroy()
 
 class WhisperTray:
     def __init__(self):
@@ -31,10 +187,28 @@ class WhisperTray:
         self.settings = self.load_settings()
         self.output_mode = self.settings.get('output_mode', 'hinglish')
         self.api_key = self.settings.get('api_key', '')
+        self.debug_enabled = self.settings.get('debug_enabled', False)
+        self.debug_window = None
+        
+        # Initialize debug window if enabled
+        if self.debug_enabled:
+            self.debug_window = DebugWindow(self)
+            
+        self.log("WhisperTray initialized", "success")
+        self.log(f"Output mode: {self.output_mode}", "info")
+        self.log(f"Debug mode: {'Enabled' if self.debug_enabled else 'Disabled'}", "info")
         
         # Check API key on startup
         if not self.api_key:
+            self.log("No API key found, showing setup dialog", "warning")
             self.show_api_key_dialog(first_time=True)
+        else:
+            self.log("API key loaded successfully", "success")
+            
+    def log(self, message, level='info'):
+        """Log a message to the debug window if enabled"""
+        if self.debug_enabled and self.debug_window:
+            self.debug_window.add_log(message, level)
             
     def load_settings(self):
         """Load settings from file"""
@@ -42,8 +216,8 @@ class WhisperTray:
             if os.path.exists('settings.json'):
                 with open('settings.json', 'r') as f:
                     return json.load(f)
-        except:
-            pass
+        except Exception as e:
+            print(f"Error loading settings: {e}")
         return {}
         
     def save_settings(self):
@@ -51,10 +225,12 @@ class WhisperTray:
         try:
             self.settings['output_mode'] = self.output_mode
             self.settings['api_key'] = self.api_key
+            self.settings['debug_enabled'] = self.debug_enabled
             with open('settings.json', 'w') as f:
                 json.dump(self.settings, f, indent=2)
-        except:
-            pass
+            self.log("Settings saved", "debug")
+        except Exception as e:
+            self.log(f"Error saving settings: {e}", "error")
             
     def show_api_key_dialog(self, first_time=False):
         """Show dialog to enter API key"""
@@ -137,6 +313,7 @@ class WhisperTray:
             if new_key:
                 self.api_key = new_key
                 self.save_settings()
+                self.log("API key updated successfully", "success")
                 dialog.attributes('-topmost', True)
                 dialog.update()
                 messagebox.showinfo("Success", "API key saved successfully!")
@@ -144,6 +321,7 @@ class WhisperTray:
                 root.destroy()
                 self.update_menu()  # Update menu to show connected status
             else:
+                self.log("Invalid API key entered", "warning")
                 dialog.attributes('-topmost', True)
                 dialog.update()
                 messagebox.showwarning("Warning", "Please enter a valid API key")
@@ -191,6 +369,28 @@ class WhisperTray:
         self.icon = pystray.Icon("whisper_paste", image, "Whisper Paste - Press Ctrl+Space")
         self.update_menu()
         
+    def toggle_debug(self):
+        """Toggle debug mode on/off"""
+        self.debug_enabled = not self.debug_enabled
+        self.save_settings()
+        
+        if self.debug_enabled:
+            if not self.debug_window:
+                self.debug_window = DebugWindow(self)
+            self.debug_window.show_window()
+            self.log("Debug mode enabled", "success")
+        else:
+            if self.debug_window:
+                self.debug_window.hide_window()
+            self.log("Debug mode disabled", "info")
+            
+        self.update_menu()
+        
+    def show_debug_panel(self):
+        """Show the debug panel if debug is enabled"""
+        if self.debug_enabled and self.debug_window:
+            self.debug_window.show_window()
+        
     def update_menu(self):
         """Update tray menu with current settings"""
         api_status = "✓ Connected" if self.api_key else "⚠️ No API Key"
@@ -207,6 +407,9 @@ class WhisperTray:
             pystray.MenuItem(f"  {'✓' if self.output_mode == 'english' else '  '} English", 
                            lambda: self.set_mode('english')),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
+            pystray.MenuItem(f"🐛 {'✓' if self.debug_enabled else '  '} Debug Panel", self.toggle_debug),
+            pystray.MenuItem("Show Debug Panel", self.show_debug_panel, enabled=self.debug_enabled),
+            pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("🟢 Ready | 🔴 Recording | 🔵 Processing", lambda: None, enabled=False),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("Ctrl+Space to Record", lambda: None, enabled=False),
@@ -220,13 +423,19 @@ class WhisperTray:
         self.output_mode = mode
         self.save_settings()
         self.update_menu()
+        self.log(f"Output mode changed to: {mode}", "info")
         
     def quit_app(self, icon=None, item=None):
         """Properly exit the application"""
+        self.log("Shutting down Whisper Paste...", "warning")
         self.running = False
         self.recording = False
         self.processing = False
         
+        # Destroy debug window if exists
+        if self.debug_window:
+            self.debug_window.destroy()
+            
         # Stop icon
         if self.icon:
             self.icon.stop()
@@ -244,6 +453,8 @@ class WhisperTray:
         """Update tray icon based on state: ready, recording, processing"""
         if not self.icon:
             return
+            
+        self.log(f"Status changed to: {state}", "debug")
             
         # Create new icon image
         image = Image.new('RGB', (64, 64), color='black')
@@ -281,6 +492,7 @@ class WhisperTray:
     def record_audio(self):
         """Record audio until stopped"""
         self.update_icon_status('recording')
+        self.log("Recording started", "info")
         
         self.audio_data = []
         self.recording = True
@@ -292,6 +504,7 @@ class WhisperTray:
                 if elapsed < self.max_duration:
                     self.audio_data.append(indata.copy())
                 else:
+                    self.log(f"Max recording duration ({self.max_duration}s) reached", "warning")
                     self.recording = False
                     
         try:
@@ -302,6 +515,7 @@ class WhisperTray:
                 while self.recording and self.running:
                     sd.sleep(100)
         except Exception as e:
+            self.log(f"Recording error: {str(e)}", "error")
             self.update_icon_status('ready')
             return None
             
@@ -309,11 +523,13 @@ class WhisperTray:
         
         # Process audio
         if not self.audio_data:
+            self.log("No audio data captured", "warning")
             self.update_icon_status('ready')
             return None
             
         audio = np.concatenate(self.audio_data, axis=0)
         duration = len(audio) / self.sample_rate
+        self.log(f"Recording stopped. Duration: {duration:.2f}s", "info")
         
         # Save to temp file
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
@@ -322,6 +538,7 @@ class WhisperTray:
         # Convert to int16
         audio_int16 = (audio * 32767).astype(np.int16)
         wav.write(temp_file, self.sample_rate, audio_int16)
+        self.log(f"Audio saved to temp file: {temp_file}", "debug")
         
         return temp_file
         
@@ -330,9 +547,11 @@ class WhisperTray:
         # Update to processing state
         self.processing = True
         self.update_icon_status('processing')
+        self.log(f"Starting transcription (mode: {self.output_mode})", "info")
         
         try:
             if not self.api_key:
+                self.log("No API key configured", "error")
                 self.show_notification("No API key set! Right-click tray icon to add one.")
                 return None
                 
@@ -351,6 +570,8 @@ Preserve the original Hinglish mixing."""
                 prompt = "Transcribe and translate this to English."
                 language = 'en'  # English for translation
             
+            self.log(f"Sending API request to OpenAI Whisper", "debug")
+            
             with open(audio_file, 'rb') as f:
                 files = {
                     'file': ('audio.wav', f, 'audio/wav'),
@@ -367,11 +588,15 @@ Preserve the original Hinglish mixing."""
                     timeout=60
                 )
                 
+            self.log(f"API response status: {response.status_code}", "debug")
+                
             if response.status_code == 200:
                 text = response.text.strip()
+                self.log(f"Transcription received: {text[:100]}...", "success")
                 
                 # Force romanization if Devanagari detected
                 if any('\u0900' <= char <= '\u097F' for char in text):
+                    self.log("Devanagari detected, converting to Roman script", "debug")
                     # Comprehensive transliteration map
                     devanagari_to_roman = {
                         # Common words
@@ -404,15 +629,22 @@ Preserve the original Hinglish mixing."""
                 
                 # Clean text
                 text = text.replace('"', '').replace("'", '').strip()
+                self.log(f"Final text: {text}", "info")
                 
                 return text
             elif response.status_code == 401:
+                self.log("API authentication failed - Invalid API key", "error")
                 self.show_notification("Invalid API key! Please check your key.")
                 return None
             else:
+                self.log(f"API error: {response.status_code} - {response.text}", "error")
                 return None
                 
+        except requests.exceptions.Timeout:
+            self.log("API request timed out", "error")
+            return None
         except Exception as e:
+            self.log(f"Transcription error: {str(e)}", "error")
             return None
         finally:
             self.processing = False
@@ -430,36 +662,46 @@ Preserve the original Hinglish mixing."""
     def paste_text(self, text):
         """Copy to clipboard and paste"""
         if not text:
+            self.log("No text to paste", "warning")
             return
             
         # Copy to clipboard
         pyperclip.copy(text)
+        self.log(f"Text copied to clipboard: {text[:50]}...", "debug")
         
         # Small delay
         time.sleep(0.2)
         
         # Paste
         keyboard.press_and_release('ctrl+v')
+        self.log("Text pasted via Ctrl+V", "success")
         
     def toggle_recording(self):
         """Start or stop recording"""
         if not self.running:
             return
             
+        self.log("Ctrl+Space pressed", "debug")
+            
         if not self.api_key:
+            self.log("Recording attempted without API key", "warning")
             self.show_api_key_dialog()
             return
             
         if not self.recording and not self.processing:
             # Start recording
+            self.log("Starting new recording thread", "debug")
             thread = threading.Thread(target=self.process_recording)
             thread.start()
         elif self.recording:
             # Stop recording
+            self.log("Stopping recording", "info")
             self.recording = False
             
     def process_recording(self):
         """Record, transcribe, and paste"""
+        self.log("Process recording started", "debug")
+        
         # Record
         audio_file = self.record_audio()
         
@@ -470,20 +712,31 @@ Preserve the original Hinglish mixing."""
             # Clean up
             try:
                 os.unlink(audio_file)
-            except:
-                pass
+                self.log(f"Temp file deleted: {audio_file}", "debug")
+            except Exception as e:
+                self.log(f"Failed to delete temp file: {e}", "warning")
                 
             # Paste
             if text:
                 self.paste_text(text)
+            else:
+                self.log("No text to paste after transcription", "warning")
+        else:
+            self.log("Recording failed or was cancelled", "warning")
                 
     def run(self):
         """Run the application"""
         # Register hotkey
         keyboard.add_hotkey('ctrl+space', self.toggle_recording)
+        self.log("Hotkey registered: Ctrl+Space", "success")
+        
+        # Show debug window if enabled
+        if self.debug_enabled and self.debug_window:
+            self.debug_window.show_window()
         
         # Create and run tray icon
         self.create_tray_icon()
+        self.log("System tray icon created", "success")
         
         # Run icon (this blocks until quit)
         self.icon.run()
