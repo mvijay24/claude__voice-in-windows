@@ -21,6 +21,7 @@ import webbrowser
 class WhisperTray:
     def __init__(self):
         self.recording = False
+        self.processing = False
         self.audio_data = []
         self.sample_rate = 16000
         self.max_duration = 300  # 5 minutes max
@@ -61,6 +62,8 @@ class WhisperTray:
         root.withdraw()  # Hide main window
         
         if first_time:
+            root.attributes('-topmost', True)
+            root.update()
             messagebox.showinfo(
                 "Welcome to Whisper Paste!",
                 "You need an OpenAI API key to use this app.\n\n"
@@ -74,6 +77,11 @@ class WhisperTray:
         dialog.geometry("500x250")
         dialog.configure(bg='#1a1a1a')
         
+        # Make dialog always on top and bring to front
+        dialog.attributes('-topmost', True)
+        dialog.lift()
+        dialog.focus_force()
+        
         # Center the dialog
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
@@ -83,6 +91,10 @@ class WhisperTray:
         # Make dialog modal
         dialog.transient(root)
         dialog.grab_set()
+        
+        # Ensure dialog is visible
+        dialog.deiconify()
+        dialog.update()
         
         # Title
         tk.Label(dialog, text="OpenAI API Key", font=('Arial', 16, 'bold'),
@@ -125,10 +137,15 @@ class WhisperTray:
             if new_key:
                 self.api_key = new_key
                 self.save_settings()
+                dialog.attributes('-topmost', True)
+                dialog.update()
                 messagebox.showinfo("Success", "API key saved successfully!")
                 dialog.destroy()
                 root.destroy()
+                self.update_menu()  # Update menu to show connected status
             else:
+                dialog.attributes('-topmost', True)
+                dialog.update()
                 messagebox.showwarning("Warning", "Please enter a valid API key")
                 
         def get_key():
@@ -161,14 +178,14 @@ class WhisperTray:
         
     def create_tray_icon(self):
         """Create system tray icon"""
-        # Create icon image
+        # Create icon image with green for ready state
         image = Image.new('RGB', (64, 64), color='black')
         draw = ImageDraw.Draw(image)
         
-        # Draw mic icon
-        draw.ellipse([20, 10, 44, 40], fill='#14ffec')
-        draw.rectangle([28, 35, 36, 50], fill='#14ffec')
-        draw.rectangle([20, 48, 44, 54], fill='#14ffec')
+        # Draw mic icon in green (ready state)
+        draw.ellipse([20, 10, 44, 40], fill='#00ff00')  # Green
+        draw.rectangle([28, 35, 36, 50], fill='#00ff00')
+        draw.rectangle([20, 48, 44, 54], fill='#00ff00')
         
         # Create icon
         self.icon = pystray.Icon("whisper_paste", image, "Whisper Paste - Press Ctrl+Space")
@@ -190,6 +207,8 @@ class WhisperTray:
             pystray.MenuItem(f"  {'✓' if self.output_mode == 'english' else '  '} English", 
                            lambda: self.set_mode('english')),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
+            pystray.MenuItem("🟢 Ready | 🔴 Recording | 🔵 Processing", lambda: None, enabled=False),
+            pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("Ctrl+Space to Record", lambda: None, enabled=False),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("Exit", self.quit_app)
@@ -206,6 +225,7 @@ class WhisperTray:
         """Properly exit the application"""
         self.running = False
         self.recording = False
+        self.processing = False
         
         # Stop icon
         if self.icon:
@@ -220,8 +240,8 @@ class WhisperTray:
         # Force exit all threads
         os._exit(0)
         
-    def update_icon_status(self, recording=False):
-        """Update tray icon based on recording status"""
+    def update_icon_status(self, state='ready'):
+        """Update tray icon based on state: ready, recording, processing"""
         if not self.icon:
             return
             
@@ -229,22 +249,38 @@ class WhisperTray:
         image = Image.new('RGB', (64, 64), color='black')
         draw = ImageDraw.Draw(image)
         
-        # Draw mic with color based on status
-        color = '#ff0000' if recording else '#14ffec'
+        # Set color based on state
+        if state == 'recording':
+            color = '#ff0000'  # Red for recording
+            title = f"🔴 Recording... [{self.output_mode}]"
+        elif state == 'processing':
+            color = '#0088ff'  # Blue for processing
+            title = f"🔵 Processing... [{self.output_mode}]"
+        else:  # ready
+            color = '#00ff00'  # Green for ready
+            title = f"🟢 Whisper Paste - Ctrl+Space [{self.output_mode}]"
+        
+        # Draw mic icon
         draw.ellipse([20, 10, 44, 40], fill=color)
         draw.rectangle([28, 35, 36, 50], fill=color)
         draw.rectangle([20, 48, 44, 54], fill=color)
         
-        # Add recording indicator
-        if recording:
+        # Add indicators
+        if state == 'recording':
+            # Recording dot
             draw.ellipse([48, 8, 58, 18], fill='#ff0000')
+        elif state == 'processing':
+            # Processing animation (three dots)
+            for i in range(3):
+                x = 48 + i * 8
+                draw.ellipse([x, 8, x + 4, 12], fill='#0088ff')
             
         self.icon.icon = image
-        self.icon.title = f"Recording... [{self.output_mode}]" if recording else f"Whisper Paste - Ctrl+Space [{self.output_mode}]"
+        self.icon.title = title
         
     def record_audio(self):
         """Record audio until stopped"""
-        self.update_icon_status(True)
+        self.update_icon_status('recording')
         
         self.audio_data = []
         self.recording = True
@@ -266,13 +302,14 @@ class WhisperTray:
                 while self.recording and self.running:
                     sd.sleep(100)
         except Exception as e:
-            self.update_icon_status(False)
+            self.update_icon_status('ready')
             return None
             
-        self.update_icon_status(False)
+        # Don't update to ready yet - will update to processing next
         
         # Process audio
         if not self.audio_data:
+            self.update_icon_status('ready')
             return None
             
         audio = np.concatenate(self.audio_data, axis=0)
@@ -290,6 +327,10 @@ class WhisperTray:
         
     def transcribe_file(self, audio_file):
         """Send audio to OpenAI Whisper API"""
+        # Update to processing state
+        self.processing = True
+        self.update_icon_status('processing')
+        
         try:
             if not self.api_key:
                 self.show_notification("No API key set! Right-click tray icon to add one.")
@@ -373,11 +414,16 @@ Preserve the original Hinglish mixing."""
                 
         except Exception as e:
             return None
+        finally:
+            self.processing = False
+            self.update_icon_status('ready')
             
     def show_notification(self, message):
         """Show a simple notification"""
         root = tk.Tk()
         root.withdraw()
+        root.attributes('-topmost', True)
+        root.update()
         messagebox.showwarning("Whisper Paste", message)
         root.destroy()
         
@@ -404,11 +450,11 @@ Preserve the original Hinglish mixing."""
             self.show_api_key_dialog()
             return
             
-        if not self.recording:
+        if not self.recording and not self.processing:
             # Start recording
             thread = threading.Thread(target=self.process_recording)
             thread.start()
-        else:
+        elif self.recording:
             # Stop recording
             self.recording = False
             
