@@ -454,33 +454,55 @@ class WhisperTray:
             }
             self.log(f"=== SESSION START: {session_id} ===", "info")
             self.log(f"Mode: {self.output_mode}", "info")
+            self.log(f"Session tracking initialized for session {self.session_count}", "debug")
+        else:
+            self.log("Session summary disabled - not tracking session", "debug")
             
     def end_session(self):
         """End current recording session and show summary"""
-        if self.session_summary_enabled and self.current_session:
-            session = self.current_session
-            session['end_time'] = datetime.now()
-            duration = (session['end_time'] - session['start_time']).total_seconds()
-            
-            self.log(f"=== SESSION END: {session['id']} ===", "info")
-            self.log(f"Total duration: {duration:.2f}s", "info")
-            self.log(f"Audio duration: {session['audio_duration']:.2f}s", "info")
-            self.log(f"API response time: {session['api_response_time']:.2f}s", "info")
-            self.log(f"Text received: {'Yes' if session['transcribed_text'] else 'No'}", "info")
-            self.log(f"Paste success: {'Yes' if session['paste_success'] else 'No'}", "info")
-            
-            if session['transcribed_text']:
-                self.log(f"Text preview: {session['transcribed_text'][:50]}...", "debug")
-            
-            if session['errors']:
-                self.log(f"Errors: {len(session['errors'])}", "error")
-                for error in session['errors']:
-                    self.log(f"  - {error}", "error")
-                    
-            # Always show session summary window when enabled
-            self.show_session_summary(session)
+        if self.session_summary_enabled:
+            if self.current_session:
+                session = self.current_session
+                session['end_time'] = datetime.now()
+                duration = (session['end_time'] - session['start_time']).total_seconds()
                 
-            self.current_session = None
+                self.log(f"=== SESSION END: {session['id']} ===", "info")
+                self.log(f"Total duration: {duration:.2f}s", "info")
+                self.log(f"Audio duration: {session['audio_duration']:.2f}s", "info")
+                self.log(f"API response time: {session['api_response_time']:.2f}s", "info")
+                self.log(f"Text received: {'Yes' if session['transcribed_text'] else 'No'}", "info")
+                self.log(f"Paste success: {'Yes' if session['paste_success'] else 'No'}", "info")
+                
+                if session['transcribed_text']:
+                    self.log(f"Text preview: {session['transcribed_text'][:50]}...", "debug")
+                
+                if session['errors']:
+                    self.log(f"Errors: {len(session['errors'])}", "error")
+                    for error in session['errors']:
+                        self.log(f"  - {error}", "error")
+                        
+                # Always show session summary window when enabled
+                self.log("Showing session summary window...", "debug")
+                self.show_session_summary(session)
+                    
+                self.current_session = None
+            else:
+                self.log("WARNING: Session summary enabled but no current session found!", "error")
+                # Create emergency session data
+                emergency_session = {
+                    'id': f"EMERGENCY_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    'mode': self.output_mode,
+                    'audio_duration': 0,
+                    'api_response_time': 0,
+                    'transcribed_text': None,
+                    'paste_success': False,
+                    'errors': ['No session data found - this indicates a tracking error'],
+                    'logs': [
+                        {'time': datetime.now().strftime("%H:%M:%S.%f")[:-3], 'level': 'error', 
+                         'message': 'Session tracking failed - no current session object'}
+                    ]
+                }
+                self.show_session_summary(emergency_session)
             
     def show_session_summary(self, session):
         """Show session summary in a popup window"""
@@ -803,10 +825,14 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 
                 # Flash tray icon to show text received
                 if text:
+                    self.log(f"Text received from API, flashing tray icon yellow", "debug")
                     self.flash_tray_icon()
+                    self.log(f"Full transcribed text: {text}", "debug")
                 else:
                     self.log("Empty response from API", "warning")
                     self.show_notification("No text received from API")
+                    if self.current_session:
+                        self.current_session['errors'].append("Empty API response")
                     return None
                 
                 # Force romanization if Devanagari detected
@@ -880,75 +906,82 @@ Do NOT translate to pure English. Keep the code-switching intact."""
         
     def show_toast(self, text, duration=3000):
         """Show a toast notification with text preview"""
+        self.log(f"Showing toast notification with text: {text[:50]}...", "debug")
+        
         def create_toast():
-            root = tk.Tk()
-            root.withdraw()
-            
-            toast = tk.Toplevel(root)
-            
-            # Configure window
-            toast.overrideredirect(True)  # Remove window decorations
-            toast.attributes('-topmost', True)
-            toast.attributes('-alpha', 0.9)  # Slight transparency
-            
-            # Style
-            toast.configure(bg='#1a1a1a')
-            
-            # Create frame with border
-            frame = tk.Frame(toast, bg='#1a1a1a', highlightbackground='#14ffec', 
-                           highlightthickness=2, padx=15, pady=10)
-            frame.pack()
-            
-            # Title
-            title_label = tk.Label(frame, text="📝 Transcribed Text:", 
-                                 font=('Arial', 10, 'bold'), 
-                                 bg='#1a1a1a', fg='#14ffec')
-            title_label.pack(anchor='w')
-            
-            # Text preview (truncate if too long)
-            preview_text = text[:100] + "..." if len(text) > 100 else text
-            text_label = tk.Label(frame, text=preview_text, 
-                                font=('Arial', 9), 
-                                bg='#1a1a1a', fg='white',
-                                wraplength=300, justify='left')
-            text_label.pack(anchor='w', pady=(5, 0))
-            
-            # Status
-            status_label = tk.Label(frame, text="✓ Auto-pasting in 1 second...", 
-                                  font=('Arial', 8, 'italic'), 
-                                  bg='#1a1a1a', fg='#00ff00')
-            status_label.pack(anchor='w', pady=(5, 0))
-            
-            # Update window size
-            toast.update_idletasks()
-            
-            # Position in bottom right corner
-            screen_width = toast.winfo_screenwidth()
-            screen_height = toast.winfo_screenheight()
-            toast_width = toast.winfo_width()
-            toast_height = toast.winfo_height()
-            
-            x = screen_width - toast_width - 20
-            y = screen_height - toast_height - 60
-            
-            toast.geometry(f'+{x}+{y}')
-            
-            # Fade in effect
-            alpha = 0.0
-            def fade_in():
-                nonlocal alpha
-                if alpha < 0.9:
-                    alpha += 0.1
-                    toast.attributes('-alpha', alpha)
-                    toast.after(30, fade_in)
-                else:
-                    # Start countdown to destroy
-                    toast.after(duration, lambda: [toast.destroy(), root.destroy()])
-            
-            fade_in()
-            
-            # Keep window alive
-            root.mainloop()
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                
+                toast = tk.Toplevel(root)
+                
+                # Configure window
+                toast.overrideredirect(True)  # Remove window decorations
+                toast.attributes('-topmost', True)
+                toast.attributes('-alpha', 0.9)  # Slight transparency
+                
+                # Style
+                toast.configure(bg='#1a1a1a')
+                
+                # Create frame with border
+                frame = tk.Frame(toast, bg='#1a1a1a', highlightbackground='#14ffec', 
+                               highlightthickness=2, padx=15, pady=10)
+                frame.pack()
+                
+                # Title
+                title_label = tk.Label(frame, text="📝 Transcribed Text:", 
+                                     font=('Arial', 10, 'bold'), 
+                                     bg='#1a1a1a', fg='#14ffec')
+                title_label.pack(anchor='w')
+                
+                # Text preview (truncate if too long)
+                preview_text = text[:100] + "..." if len(text) > 100 else text
+                text_label = tk.Label(frame, text=preview_text, 
+                                    font=('Arial', 9), 
+                                    bg='#1a1a1a', fg='white',
+                                    wraplength=300, justify='left')
+                text_label.pack(anchor='w', pady=(5, 0))
+                
+                # Status
+                status_label = tk.Label(frame, text="✓ Auto-pasting in 1 second...", 
+                                      font=('Arial', 8, 'italic'), 
+                                      bg='#1a1a1a', fg='#00ff00')
+                status_label.pack(anchor='w', pady=(5, 0))
+                
+                # Update window size
+                toast.update_idletasks()
+                
+                # Position in bottom right corner
+                screen_width = toast.winfo_screenwidth()
+                screen_height = toast.winfo_screenheight()
+                toast_width = toast.winfo_width()
+                toast_height = toast.winfo_height()
+                
+                x = screen_width - toast_width - 20
+                y = screen_height - toast_height - 60
+                
+                toast.geometry(f'+{x}+{y}')
+                
+                # Fade in effect
+                alpha = 0.0
+                def fade_in():
+                    nonlocal alpha
+                    if alpha < 0.9:
+                        alpha += 0.1
+                        toast.attributes('-alpha', alpha)
+                        toast.after(30, fade_in)
+                    else:
+                        # Start countdown to destroy
+                        toast.after(duration, lambda: [toast.destroy(), root.destroy()])
+                
+                fade_in()
+                
+                # Keep window alive
+                root.mainloop()
+                
+                self.log("Toast notification displayed successfully", "debug")
+            except Exception as e:
+                self.log(f"Error showing toast: {str(e)}", "error")
             
         # Create toast in thread to not block
         threading.Thread(target=create_toast, daemon=True).start()
@@ -1015,48 +1048,58 @@ Do NOT translate to pure English. Keep the code-switching intact."""
         """Record, transcribe, and paste"""
         self.log("Process recording started", "debug")
         
-        # Start session tracking
-        self.start_session()
-        
-        # Record
-        audio_file = self.record_audio()
-        
-        if audio_file and self.running:
-            # Transcribe
-            text = self.transcribe_file(audio_file)
+        try:
+            # Start session tracking
+            self.start_session()
             
-            # Store in session
-            if self.current_session:
-                self.current_session['transcribed_text'] = text
+            # Record
+            audio_file = self.record_audio()
             
-            # Clean up
-            try:
-                os.unlink(audio_file)
-                self.log(f"Temp file deleted: {audio_file}", "debug")
-            except Exception as e:
-                self.log(f"Failed to delete temp file: {e}", "warning")
-                if self.current_session:
-                    self.current_session['errors'].append(f"Temp file cleanup: {e}")
+            if audio_file and self.running:
+                # Transcribe
+                text = self.transcribe_file(audio_file)
                 
-            # Paste
-            if text:
-                # Show toast with text preview
-                self.show_toast(text)
-                # Small delay before pasting
-                time.sleep(1)
-                paste_success = self.paste_text(text)
-                
+                # Store in session
                 if self.current_session:
-                    self.current_session['paste_success'] = paste_success
+                    self.current_session['transcribed_text'] = text
+                
+                # Clean up
+                try:
+                    os.unlink(audio_file)
+                    self.log(f"Temp file deleted: {audio_file}", "debug")
+                except Exception as e:
+                    self.log(f"Failed to delete temp file: {e}", "warning")
+                    if self.current_session:
+                        self.current_session['errors'].append(f"Temp file cleanup: {e}")
+                    
+                # Paste
+                if text:
+                    self.log(f"Text ready to paste: {text[:50]}...", "info")
+                    # Show toast with text preview
+                    self.show_toast(text)
+                    # Small delay before pasting
+                    time.sleep(1)
+                    paste_success = self.paste_text(text)
+                    
+                    if self.current_session:
+                        self.current_session['paste_success'] = paste_success
+                else:
+                    self.log("No text to paste after transcription", "warning")
+                    if self.current_session:
+                        self.current_session['errors'].append("No text received from transcription")
             else:
-                self.log("No text to paste after transcription", "warning")
-        else:
-            self.log("Recording failed or was cancelled", "warning")
+                self.log("Recording failed or was cancelled", "warning")
+                if self.current_session:
+                    self.current_session['errors'].append("Recording failed or cancelled")
+                    
+        except Exception as e:
+            self.log(f"Unexpected error in process_recording: {str(e)}", "error")
             if self.current_session:
-                self.current_session['errors'].append("Recording failed or cancelled")
-                
-        # End session and show summary
-        self.end_session()
+                self.current_session['errors'].append(f"Process error: {str(e)}")
+        finally:
+            # ALWAYS end session and show summary
+            self.log("Process recording completed, ending session", "debug")
+            self.end_session()
                 
     def run(self):
         """Run the application"""
