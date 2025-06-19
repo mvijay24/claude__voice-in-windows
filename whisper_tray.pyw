@@ -825,8 +825,8 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 
                 # Flash tray icon to show text received
                 if text:
-                    self.log(f"Text received from API, flashing tray icon yellow", "debug")
-                    self.flash_tray_icon()
+                    self.log(f"Text received from API, yellow flash disabled due to Windows error", "debug")
+                    # self.flash_tray_icon()  # Disabled - causing Windows cursor handle error
                     self.log(f"Full transcribed text: {text}", "debug")
                 else:
                     self.log("Empty response from API", "warning")
@@ -893,6 +893,8 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             return None
         finally:
             self.processing = False
+            # Delay icon update to avoid thread conflicts
+            time.sleep(0.1)
             self.update_icon_status('ready')
             
     def show_notification(self, message, title="Whisper Paste"):

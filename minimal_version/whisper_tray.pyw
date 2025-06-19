@@ -908,83 +908,13 @@ Do NOT translate to pure English. Keep the code-switching intact."""
         """Show a toast notification with text preview"""
         self.log(f"Showing toast notification with text: {text[:50]}...", "debug")
         
-        def create_toast():
-            try:
-                root = tk.Tk()
-                root.withdraw()
-                
-                toast = tk.Toplevel(root)
-                
-                # Configure window
-                toast.overrideredirect(True)  # Remove window decorations
-                toast.attributes('-topmost', True)
-                toast.attributes('-alpha', 0.9)  # Slight transparency
-                
-                # Style
-                toast.configure(bg='#1a1a1a')
-                
-                # Create frame with border
-                frame = tk.Frame(toast, bg='#1a1a1a', highlightbackground='#14ffec', 
-                               highlightthickness=2, padx=15, pady=10)
-                frame.pack()
-                
-                # Title
-                title_label = tk.Label(frame, text="📝 Transcribed Text:", 
-                                     font=('Arial', 10, 'bold'), 
-                                     bg='#1a1a1a', fg='#14ffec')
-                title_label.pack(anchor='w')
-                
-                # Text preview (truncate if too long)
-                preview_text = text[:100] + "..." if len(text) > 100 else text
-                text_label = tk.Label(frame, text=preview_text, 
-                                    font=('Arial', 9), 
-                                    bg='#1a1a1a', fg='white',
-                                    wraplength=300, justify='left')
-                text_label.pack(anchor='w', pady=(5, 0))
-                
-                # Status
-                status_label = tk.Label(frame, text="✓ Auto-pasting in 1 second...", 
-                                      font=('Arial', 8, 'italic'), 
-                                      bg='#1a1a1a', fg='#00ff00')
-                status_label.pack(anchor='w', pady=(5, 0))
-                
-                # Update window size
-                toast.update_idletasks()
-                
-                # Position in bottom right corner
-                screen_width = toast.winfo_screenwidth()
-                screen_height = toast.winfo_screenheight()
-                toast_width = toast.winfo_width()
-                toast_height = toast.winfo_height()
-                
-                x = screen_width - toast_width - 20
-                y = screen_height - toast_height - 60
-                
-                toast.geometry(f'+{x}+{y}')
-                
-                # Fade in effect
-                alpha = 0.0
-                def fade_in():
-                    nonlocal alpha
-                    if alpha < 0.9:
-                        alpha += 0.1
-                        toast.attributes('-alpha', alpha)
-                        toast.after(30, fade_in)
-                    else:
-                        # Start countdown to destroy
-                        toast.after(duration, lambda: [toast.destroy(), root.destroy()])
-                
-                fade_in()
-                
-                # Keep window alive
-                root.mainloop()
-                
-                self.log("Toast notification displayed successfully", "debug")
-            except Exception as e:
-                self.log(f"Error showing toast: {str(e)}", "error")
+        # Store text for later use if needed
+        if self.current_session:
+            self.current_session['toast_shown'] = True
             
-        # Create toast in thread to not block
-        threading.Thread(target=create_toast, daemon=True).start()
+        # Skip toast for now due to Windows cursor issues
+        # TODO: Fix Windows cursor handle error in tkinter threads
+        return
         
     def paste_text(self, text):
         """Copy to clipboard and paste"""
@@ -1059,9 +989,10 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 # Transcribe
                 text = self.transcribe_file(audio_file)
                 
-                # Store in session
-                if self.current_session:
+                # Store in session IMMEDIATELY after getting text
+                if self.current_session and text:
                     self.current_session['transcribed_text'] = text
+                    self.log(f"Text stored in session: {text[:30]}...", "debug")
                 
                 # Clean up
                 try:
@@ -1075,10 +1006,10 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 # Paste
                 if text:
                     self.log(f"Text ready to paste: {text[:50]}...", "info")
-                    # Show toast with text preview
-                    self.show_toast(text)
+                    # Skip toast due to Windows cursor error
+                    # self.show_toast(text)
                     # Small delay before pasting
-                    time.sleep(1)
+                    time.sleep(0.5)
                     paste_success = self.paste_text(text)
                     
                     if self.current_session:
