@@ -489,6 +489,32 @@ class WhisperTray:
         self.icon.icon = image
         self.icon.title = title
         
+    def flash_tray_icon(self, flashes=3, delay=200):
+        """Flash the tray icon to show text was received"""
+        def flash():
+            for i in range(flashes):
+                # Flash yellow
+                image = Image.new('RGB', (64, 64), color='black')
+                draw = ImageDraw.Draw(image)
+                
+                # Draw mic icon in yellow
+                draw.ellipse([20, 10, 44, 40], fill='#ffff00')
+                draw.rectangle([28, 35, 36, 50], fill='#ffff00')
+                draw.rectangle([20, 48, 44, 54], fill='#ffff00')
+                
+                # Add flash indicator
+                draw.ellipse([48, 8, 58, 18], fill='#ffff00')
+                
+                self.icon.icon = image
+                time.sleep(delay / 1000)
+                
+                # Back to green
+                self.update_icon_status('ready')
+                time.sleep(delay / 1000)
+                
+        # Run flash in thread to not block
+        threading.Thread(target=flash, daemon=True).start()
+        
     def record_audio(self):
         """Record audio until stopped"""
         self.update_icon_status('recording')
@@ -559,13 +585,12 @@ class WhisperTray:
             
             # Different prompts based on mode
             if self.output_mode == 'hinglish':
-                prompt = """Transcribe this audio exactly as spoken. Keep Hindi words in Roman script.
-Do NOT translate Hindi words to English. 
-Examples:
-- Keep: bhai, kya, kar, rahe, ho, acha, theek, hai, nahi, jaldi, bhej, de
-- Output format: "bhai ye file bhej de jaldi se"
-Preserve the original Hinglish mixing."""
-                language = 'hi'  # Hindi for better Hinglish recognition
+                prompt = """Transcribe this Hinglish audio (mixed Hindi-English). 
+The speaker is mixing Hindi and English words. Transcribe exactly as spoken in Roman script.
+Keep all Hindi words as they sound in Roman letters.
+Examples: bhai, kya, kar, rahe, ho, acha, theek, hai, nahi, jaldi, bhej, de, yaar, matlab
+Do NOT translate to pure English. Keep the code-switching intact."""
+                language = 'en'  # Use English for better Roman script output
             else:
                 prompt = "Transcribe and translate this to English."
                 language = 'en'  # English for translation
@@ -593,6 +618,14 @@ Preserve the original Hinglish mixing."""
             if response.status_code == 200:
                 text = response.text.strip()
                 self.log(f"Transcription received: {text[:100]}...", "success")
+                
+                # Flash tray icon to show text received
+                if text:
+                    self.flash_tray_icon()
+                else:
+                    self.log("Empty response from API", "warning")
+                    self.show_notification("No text received from API")
+                    return None
                 
                 # Force romanization if Devanagari detected
                 if any('\u0900' <= char <= '\u097F' for char in text):
@@ -738,18 +771,31 @@ Preserve the original Hinglish mixing."""
         """Copy to clipboard and paste"""
         if not text:
             self.log("No text to paste", "warning")
+            self.show_notification("No text to paste!")
             return
             
-        # Copy to clipboard
-        pyperclip.copy(text)
-        self.log(f"Text copied to clipboard: {text[:50]}...", "debug")
-        
-        # Small delay
-        time.sleep(0.2)
-        
-        # Paste
-        keyboard.press_and_release('ctrl+v')
-        self.log("Text pasted via Ctrl+V", "success")
+        try:
+            # Copy to clipboard
+            pyperclip.copy(text)
+            self.log(f"Text copied to clipboard: {text[:50]}...", "debug")
+            
+            # Verify clipboard
+            clipboard_content = pyperclip.paste()
+            if clipboard_content != text:
+                self.log("Clipboard verification failed", "error")
+                self.show_notification("Failed to copy to clipboard!")
+                return
+            
+            # Small delay
+            time.sleep(0.2)
+            
+            # Paste
+            keyboard.press_and_release('ctrl+v')
+            self.log("Text pasted via Ctrl+V", "success")
+            
+        except Exception as e:
+            self.log(f"Paste error: {str(e)}", "error")
+            self.show_notification(f"Paste failed: {str(e)}")
         
     def toggle_recording(self):
         """Start or stop recording"""
