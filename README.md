@@ -9,6 +9,7 @@ A lightweight Windows system tray application that converts speech to text using
 ## ✨ Features
 
 - 🔵 **System Tray Application** - Runs silently in background
+- 🔑 **Easy API Key Setup** - Set your API key directly from the tray menu
 - 🎯 **Two Output Modes**:
   - **Hinglish (Roman)**: Preserves Hindi words in Roman script
   - **English**: Translates everything to English
@@ -16,20 +17,20 @@ A lightweight Windows system tray application that converts speech to text using
 - 📋 **Auto-Paste** - Transcribed text automatically pastes at cursor
 - 🔴 **Visual Feedback** - Icon changes color when recording
 - ⏱️ **Long Recordings** - Up to 5 minutes per session
-- 💾 **Settings Persistence** - Remembers your output mode preference
+- 💾 **Settings Persistence** - Remembers your API key and preferences
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Windows 10/11
 - Python 3.8+
-- OpenAI API Key
+- OpenAI API Key ([Get one here](https://platform.openai.com/api-keys))
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/whisper-paste.git
+   git clone https://github.com/mvijay24/whisper-paste.git
    cd whisper-paste
    ```
 
@@ -38,29 +39,35 @@ A lightweight Windows system tray application that converts speech to text using
    setup.bat
    ```
 
-3. **Add your OpenAI API key**
-   - Open `whisper_tray.pyw`
-   - Replace `YOUR_API_KEY_HERE` with your actual OpenAI API key
-
-4. **Run the application**
+3. **Run the application**
    ```batch
    start_silent.vbs
    ```
    Or simply double-click `start_silent.vbs` for completely silent startup!
 
+4. **Set your API key**
+   - Right-click the tray icon
+   - Select "🔑 Set API Key..."
+   - Enter your OpenAI API key
+   - Click Save
+
 ## 📖 Usage
 
 1. **Look for the mic icon** in your system tray (near clock)
-2. **Press `Ctrl+Space`** to start recording
-3. **Speak** in Hindi, English, or Hinglish
-4. **Press `Ctrl+Space`** again to stop
-5. **Text automatically pastes** at your cursor position!
+2. **Right-click the icon** to access settings:
+   - Set/Update API Key
+   - Choose output mode (Hinglish or English)
+3. **Press `Ctrl+Space`** to start recording
+4. **Speak** in Hindi, English, or Hinglish
+5. **Press `Ctrl+Space`** again to stop
+6. **Text automatically pastes** at your cursor position!
 
-### Changing Output Mode
+### Menu Options
 
-Right-click the tray icon and select your preferred output mode:
-- ✓ **Hinglish (Roman)** - Default, preserves Hindi words
-- **English** - Translates to English
+- **🔑 Set API Key...** - Add or update your OpenAI API key
+- **API Status** - Shows connection status (✓ Connected or ⚠️ No API Key)
+- **📝 Output Mode** - Choose between Hinglish (Roman) or English
+- **Exit** - Properly closes the application
 
 ### Examples
 
@@ -93,15 +100,17 @@ whisper-paste/
 ├── setup.bat            # Install dependencies
 ├── build.bat            # Build executable
 ├── icon.ico             # Application icon
+├── settings.json        # Saved settings (auto-created)
 └── README.md            # This file
 ```
 
 ## ⚙️ Configuration
 
-The app saves settings in `settings.json`:
+Settings are automatically saved in `settings.json`:
 ```json
 {
-  "output_mode": "hinglish"  // or "english"
+  "output_mode": "hinglish",
+  "api_key": "sk-..."
 }
 ```
 
@@ -113,7 +122,7 @@ The app saves settings in `settings.json`:
 
 **API Key issues?**
 - Ensure you have a valid OpenAI API key
-- Check your API usage limits
+- Check your API usage limits at [OpenAI Dashboard](https://platform.openai.com/usage)
 
 **No audio recorded?**
 - Check microphone permissions in Windows Settings

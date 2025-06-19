@@ -14,9 +14,9 @@ import pystray
 from PIL import Image, ImageDraw
 import signal
 import json
-
-# API Key - Replace with your own!
-API_KEY = "YOUR_API_KEY_HERE"  # Get from https://platform.openai.com/api-keys
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import webbrowser
 
 class WhisperTray:
     def __init__(self):
@@ -27,32 +27,137 @@ class WhisperTray:
         self.icon = None
         self.running = True
         self.start_time = None
-        self.output_mode = self.load_settings()  # 'hinglish' or 'english'
+        self.settings = self.load_settings()
+        self.output_mode = self.settings.get('output_mode', 'hinglish')
+        self.api_key = self.settings.get('api_key', '')
         
+        # Check API key on startup
+        if not self.api_key:
+            self.show_api_key_dialog(first_time=True)
+            
     def load_settings(self):
         """Load settings from file"""
         try:
             if os.path.exists('settings.json'):
                 with open('settings.json', 'r') as f:
-                    settings = json.load(f)
-                    return settings.get('output_mode', 'hinglish')
+                    return json.load(f)
         except:
             pass
-        return 'hinglish'
+        return {}
         
     def save_settings(self):
-        """Save settings to file"""
+        """Save all settings to file"""
         try:
+            self.settings['output_mode'] = self.output_mode
+            self.settings['api_key'] = self.api_key
             with open('settings.json', 'w') as f:
-                json.dump({'output_mode': self.output_mode}, f)
+                json.dump(self.settings, f, indent=2)
         except:
             pass
             
-    def toggle_output_mode(self, icon, item):
-        """Toggle between Hinglish and English output"""
-        self.output_mode = 'english' if self.output_mode == 'hinglish' else 'hinglish'
-        self.save_settings()
-        self.update_menu()
+    def show_api_key_dialog(self, first_time=False):
+        """Show dialog to enter API key"""
+        root = tk.Tk()
+        root.withdraw()  # Hide main window
+        
+        if first_time:
+            messagebox.showinfo(
+                "Welcome to Whisper Paste!",
+                "You need an OpenAI API key to use this app.\n\n"
+                "Click OK to enter your API key.\n"
+                "You can get one from: https://platform.openai.com/api-keys"
+            )
+            
+        # Create custom dialog
+        dialog = tk.Toplevel(root)
+        dialog.title("API Key Settings")
+        dialog.geometry("500x250")
+        dialog.configure(bg='#1a1a1a')
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f'+{x}+{y}')
+        
+        # Make dialog modal
+        dialog.transient(root)
+        dialog.grab_set()
+        
+        # Title
+        tk.Label(dialog, text="OpenAI API Key", font=('Arial', 16, 'bold'),
+                bg='#1a1a1a', fg='#14ffec').pack(pady=20)
+        
+        # Instructions
+        tk.Label(dialog, text="Enter your OpenAI API key:", font=('Arial', 10),
+                bg='#1a1a1a', fg='white').pack()
+        
+        # API key entry
+        key_frame = tk.Frame(dialog, bg='#1a1a1a')
+        key_frame.pack(pady=10, padx=20, fill='x')
+        
+        key_var = tk.StringVar(value=self.api_key)
+        key_entry = tk.Entry(key_frame, textvariable=key_var, font=('Arial', 10),
+                           bg='#2a2a2a', fg='white', insertbackground='white')
+        key_entry.pack(fill='x', ipady=5)
+        
+        # Show/Hide button
+        show_var = tk.BooleanVar(value=False)
+        
+        def toggle_show():
+            if show_var.get():
+                key_entry.config(show='')
+                show_btn.config(text='Hide')
+            else:
+                key_entry.config(show='*')
+                show_btn.config(text='Show')
+                
+        show_btn = tk.Button(key_frame, text='Show', command=lambda: [show_var.set(not show_var.get()), toggle_show()],
+                           bg='#3a3a3a', fg='white', font=('Arial', 8), width=6)
+        show_btn.place(relx=0.95, rely=0.5, anchor='e')
+        
+        # Buttons frame
+        btn_frame = tk.Frame(dialog, bg='#1a1a1a')
+        btn_frame.pack(pady=20)
+        
+        def save_key():
+            new_key = key_var.get().strip()
+            if new_key:
+                self.api_key = new_key
+                self.save_settings()
+                messagebox.showinfo("Success", "API key saved successfully!")
+                dialog.destroy()
+                root.destroy()
+            else:
+                messagebox.showwarning("Warning", "Please enter a valid API key")
+                
+        def get_key():
+            webbrowser.open("https://platform.openai.com/api-keys")
+            
+        # Save button
+        tk.Button(btn_frame, text="Save", command=save_key,
+                 bg='#14ffec', fg='black', font=('Arial', 10, 'bold'),
+                 width=10, height=1).pack(side='left', padx=5)
+        
+        # Get API Key button
+        tk.Button(btn_frame, text="Get API Key", command=get_key,
+                 bg='#3a3a3a', fg='white', font=('Arial', 10),
+                 width=12, height=1).pack(side='left', padx=5)
+        
+        # Cancel button
+        tk.Button(btn_frame, text="Cancel", command=lambda: [dialog.destroy(), root.destroy()],
+                 bg='#3a3a3a', fg='white', font=('Arial', 10),
+                 width=10, height=1).pack(side='left', padx=5)
+        
+        # Focus on entry
+        key_entry.focus()
+        key_entry.select_range(0, 'end')
+        
+        # Bind Enter key
+        dialog.bind('<Return>', lambda e: save_key())
+        
+        # Wait for dialog
+        root.wait_window(dialog)
         
     def create_tray_icon(self):
         """Create system tray icon"""
@@ -71,17 +176,21 @@ class WhisperTray:
         
     def update_menu(self):
         """Update tray menu with current settings"""
-        mode_text = f"✓ Output: {self.output_mode.capitalize()}"
+        api_status = "✓ Connected" if self.api_key else "⚠️ No API Key"
+        
         menu = pystray.Menu(
             pystray.MenuItem("🎤 Whisper Paste", lambda: None, enabled=False),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
-            pystray.MenuItem("Ctrl+Space to Record", lambda: None, enabled=False),
+            pystray.MenuItem(f"API Status: {api_status}", lambda: None, enabled=False),
+            pystray.MenuItem("🔑 Set API Key...", self.show_api_key_dialog),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("📝 Output Mode:", lambda: None, enabled=False),
             pystray.MenuItem(f"  {'✓' if self.output_mode == 'hinglish' else '  '} Hinglish (Roman)", 
                            lambda: self.set_mode('hinglish')),
             pystray.MenuItem(f"  {'✓' if self.output_mode == 'english' else '  '} English", 
                            lambda: self.set_mode('english')),
+            pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
+            pystray.MenuItem("Ctrl+Space to Record", lambda: None, enabled=False),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("Exit", self.quit_app)
         )
@@ -182,7 +291,11 @@ class WhisperTray:
     def transcribe_file(self, audio_file):
         """Send audio to OpenAI Whisper API"""
         try:
-            headers = {'Authorization': f'Bearer {API_KEY}'}
+            if not self.api_key:
+                self.show_notification("No API key set! Right-click tray icon to add one.")
+                return None
+                
+            headers = {'Authorization': f'Bearer {self.api_key}'}
             
             # Different prompts based on mode
             if self.output_mode == 'hinglish':
@@ -252,12 +365,22 @@ Preserve the original Hinglish mixing."""
                 text = text.replace('"', '').replace("'", '').strip()
                 
                 return text
+            elif response.status_code == 401:
+                self.show_notification("Invalid API key! Please check your key.")
+                return None
             else:
                 return None
                 
         except Exception as e:
             return None
             
+    def show_notification(self, message):
+        """Show a simple notification"""
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showwarning("Whisper Paste", message)
+        root.destroy()
+        
     def paste_text(self, text):
         """Copy to clipboard and paste"""
         if not text:
@@ -275,6 +398,10 @@ Preserve the original Hinglish mixing."""
     def toggle_recording(self):
         """Start or stop recording"""
         if not self.running:
+            return
+            
+        if not self.api_key:
+            self.show_api_key_dialog()
             return
             
         if not self.recording:
