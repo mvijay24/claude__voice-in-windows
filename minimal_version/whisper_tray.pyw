@@ -573,10 +573,42 @@ class WhisperTray:
                 
             logs_text.config(state='disabled')
             
+            # Buttons frame
+            btn_frame = tk.Frame(window, bg='#1a1a1a')
+            btn_frame.pack(pady=10)
+            
+            # Copy Session Summary button
+            def copy_summary():
+                # Build complete session summary text
+                summary_text = f"=== SESSION LOG SUMMARY ===\n"
+                summary_text += f"Session ID: {session['id']}\n"
+                summary_text += f"Mode: {session['mode']}\n"
+                summary_text += f"Audio Duration: {session['audio_duration']:.2f}s\n"
+                summary_text += f"API Response Time: {session['api_response_time']:.2f}s\n"
+                summary_text += f"Text Received: {'Yes' if session['transcribed_text'] else 'No'}\n"
+                summary_text += f"Paste Success: {'Yes' if session['paste_success'] else 'No'}\n"
+                summary_text += f"\nTranscribed Text:\n{session['transcribed_text'] if session['transcribed_text'] else 'No text received'}\n"
+                
+                if session['errors']:
+                    summary_text += f"\nErrors ({len(session['errors'])}):\n"
+                    for error in session['errors']:
+                        summary_text += f"  - {error}\n"
+                
+                summary_text += f"\n=== SESSION LOGS ===\n"
+                for log in session['logs']:
+                    summary_text += f"[{log['time']}] {log['message']}\n"
+                
+                pyperclip.copy(summary_text)
+                messagebox.showinfo("Copied!", "Session summary copied to clipboard!")
+            
+            copy_btn = tk.Button(btn_frame, text="Copy Session Summary", command=copy_summary,
+                               bg='#14ffec', fg='black', font=('Arial', 10), width=20)
+            copy_btn.pack(side='left', padx=5)
+            
             # Close button
-            close_btn = tk.Button(window, text="Close", command=lambda: [window.destroy(), root.destroy()],
+            close_btn = tk.Button(btn_frame, text="Close", command=lambda: [window.destroy(), root.destroy()],
                                 bg='#3a3a3a', fg='white', font=('Arial', 10), width=10)
-            close_btn.pack(pady=10)
+            close_btn.pack(side='left', padx=5)
             
             root.mainloop()
             
@@ -824,8 +856,8 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 
                 # Flash tray icon to show text received
                 if text:
-                    self.log(f"Text received from API, flashing tray icon yellow", "debug")
-                    self.flash_tray_icon()  # Re-enabled - BeefText was the issue
+                    self.log(f"Text received from API, yellow flash disabled", "debug")
+                    # self.flash_tray_icon()  # Disabled - causing cursor handle error
                     self.log(f"Full transcribed text: {text}", "debug")
                 else:
                     self.log("Empty response from API", "warning")
