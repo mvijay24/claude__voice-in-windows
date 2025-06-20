@@ -128,6 +128,11 @@ Settings are automatically saved in `settings.json`:
 - Check microphone permissions in Windows Settings
 - Ensure default microphone is set correctly
 
+**Text not pasting or cursor errors?**
+- **Close clipboard managers** like BeefText, Ditto, or ClipboardFusion - they interfere with paste functionality
+- Disable any text expander software temporarily
+- If you see "[WinError 1402] Invalid cursor handle", it's likely due to clipboard manager interference
+
 ## 💰 Cost
 
 - Uses OpenAI's Whisper API
