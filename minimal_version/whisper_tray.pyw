@@ -678,39 +678,43 @@ class WhisperTray:
             return
             
         self.log(f"Status changed to: {state}", "debug")
+        
+        try:
+            # Create new icon image
+            image = Image.new('RGB', (64, 64), color='black')
+            draw = ImageDraw.Draw(image)
             
-        # Create new icon image
-        image = Image.new('RGB', (64, 64), color='black')
-        draw = ImageDraw.Draw(image)
-        
-        # Set color based on state
-        if state == 'recording':
-            color = '#ff0000'  # Red for recording
-            title = f"🔴 Recording... [{self.output_mode}]"
-        elif state == 'processing':
-            color = '#0088ff'  # Blue for processing
-            title = f"🔵 Processing... [{self.output_mode}]"
-        else:  # ready
-            color = '#00ff00'  # Green for ready
-            title = f"🟢 Whisper Paste - Ctrl+Space [{self.output_mode}]"
-        
-        # Draw mic icon
-        draw.ellipse([20, 10, 44, 40], fill=color)
-        draw.rectangle([28, 35, 36, 50], fill=color)
-        draw.rectangle([20, 48, 44, 54], fill=color)
-        
-        # Add indicators
-        if state == 'recording':
-            # Recording dot
-            draw.ellipse([48, 8, 58, 18], fill='#ff0000')
-        elif state == 'processing':
-            # Processing animation (three dots)
-            for i in range(3):
-                x = 48 + i * 8
-                draw.ellipse([x, 8, x + 4, 12], fill='#0088ff')
+            # Set color based on state
+            if state == 'recording':
+                color = '#ff0000'  # Red for recording
+                title = f"🔴 Recording... [{self.output_mode}]"
+            elif state == 'processing':
+                color = '#0088ff'  # Blue for processing
+                title = f"🔵 Processing... [{self.output_mode}]"
+            else:  # ready
+                color = '#00ff00'  # Green for ready
+                title = f"🟢 Whisper Paste - Ctrl+Space [{self.output_mode}]"
             
-        self.icon.icon = image
-        self.icon.title = title
+            # Draw mic icon
+            draw.ellipse([20, 10, 44, 40], fill=color)
+            draw.rectangle([28, 35, 36, 50], fill=color)
+            draw.rectangle([20, 48, 44, 54], fill=color)
+            
+            # Add indicators
+            if state == 'recording':
+                # Recording dot
+                draw.ellipse([48, 8, 58, 18], fill='#ff0000')
+            elif state == 'processing':
+                # Processing animation (three dots)
+                for i in range(3):
+                    x = 48 + i * 8
+                    draw.ellipse([x, 8, x + 4, 12], fill='#0088ff')
+            
+            # Update icon in main thread to avoid cursor handle error
+            self.icon.icon = image
+            self.icon.title = title
+        except Exception as e:
+            self.log(f"Error in update_icon_status: {str(e)}", "error")
         
     def flash_tray_icon(self, flashes=3, delay=200):
         """Flash the tray icon to show text was received"""
@@ -924,7 +928,8 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             return None
         finally:
             self.processing = False
-            self.update_icon_status('ready')
+            # Icon update disabled - causing cursor handle error from thread
+            # self.update_icon_status('ready')
             
     def show_notification(self, message, title="Whisper Paste"):
         """Show a simple notification"""
@@ -1095,6 +1100,11 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                     self.current_session['transcribed_text'] = text
                     self.log(f"Text stored in session: {text[:30]}...", "debug")
                 
+                # IMPORTANT: Checking if text exists here for further processing
+                if not text:
+                    self.log("No text returned from transcription", "warning")
+                    return
+                
                 # Clean up
                 try:
                     os.unlink(audio_file)
@@ -1132,6 +1142,11 @@ Do NOT translate to pure English. Keep the code-switching intact."""
             # ALWAYS end session and show summary
             self.log("Process recording completed, ending session", "debug")
             self.end_session()
+            # Update icon to ready state after everything is done
+            try:
+                self.update_icon_status('ready')
+            except Exception as e:
+                self.log(f"Error updating icon to ready: {str(e)}", "error")
                 
     def run(self):
         """Run the application"""
