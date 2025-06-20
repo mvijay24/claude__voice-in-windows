@@ -1076,10 +1076,10 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 # Paste
                 if text:
                     self.log(f"Text ready to paste: {text[:50]}...", "info")
-                    # Show toast with text preview
-                    self.show_toast(text)
+                    # Toast disabled - still causing Windows cursor handle error
+                    # self.show_toast(text)
                     # Small delay before pasting
-                    time.sleep(1)
+                    time.sleep(0.5)
                     paste_success = self.paste_text(text)
                     
                     if self.current_session:
