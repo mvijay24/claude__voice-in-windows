@@ -67,6 +67,8 @@ A lightweight Windows system tray application that converts speech to text using
 - **🔑 Set API Key...** - Add or update your OpenAI API key
 - **API Status** - Shows connection status (✓ Connected or ⚠️ No API Key)
 - **📝 Output Mode** - Choose between Hinglish (Roman) or English
+- **🐛 Enable and Display Debug Panel** - Shows real-time execution logs
+- **📊 Session Log Summary** - Shows detailed report after each recording
 - **Exit** - Properly closes the application
 
 ### Examples
