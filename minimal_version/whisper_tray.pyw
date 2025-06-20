@@ -200,7 +200,7 @@ class WhisperTray:
         self.log("WhisperTray initialized", "success")
         self.log(f"Output mode: {self.output_mode}", "info")
         self.log(f"Debug mode: {'Enabled' if self.debug_enabled else 'Disabled'}", "info")
-        self.log(f"Session summary: {'Enabled' if self.session_summary_enabled else 'Disabled'}", "info")
+        self.log(f"Session log summary: {'Enabled' if self.session_summary_enabled else 'Disabled'}", "info")
         
         # Check API key on startup
         if not self.api_key:
@@ -384,7 +384,7 @@ class WhisperTray:
         self.update_menu()
         
     def toggle_debug(self):
-        """Toggle debug mode on/off"""
+        """Toggle debug mode on/off and show/hide panel"""
         self.debug_enabled = not self.debug_enabled
         self.save_settings()
         
@@ -392,11 +392,11 @@ class WhisperTray:
             if not self.debug_window:
                 self.debug_window = DebugWindow(self)
             self.debug_window.show_window()
-            self.log("Debug mode enabled", "success")
+            self.log("Debug panel enabled and displayed", "success")
         else:
             if self.debug_window:
                 self.debug_window.hide_window()
-            self.log("Debug mode disabled", "info")
+            self.log("Debug panel disabled", "info")
             
         self.update_menu()
         
@@ -414,7 +414,7 @@ class WhisperTray:
         
         # Show notification about the change
         if self.session_summary_enabled:
-            self.show_notification("Session Summary ENABLED ✓\n\nA detailed report window will appear after each recording session showing:\n• Audio duration\n• API response time\n• Transcribed text\n• Success/failure status\n• Complete execution logs")
+            self.show_notification("Session Log Summary ENABLED ✓\n\nA detailed report window will appear after each recording session showing:\n• Audio duration\n• API response time\n• Transcribed text\n• Success/failure status\n• Complete execution logs")
             
             # Show a sample summary window
             sample_session = {
@@ -434,7 +434,7 @@ class WhisperTray:
             }
             self.show_session_summary(sample_session)
         else:
-            self.show_notification("Session Summary DISABLED")
+            self.show_notification("Session Log Summary DISABLED")
         
     def start_session(self):
         """Start a new recording session"""
@@ -511,7 +511,7 @@ class WhisperTray:
             root.withdraw()
             
             window = tk.Toplevel(root)
-            window.title(f"Session Summary - {session['id']}")
+            window.title(f"Session Log Summary - {session['id']}")
             window.geometry("600x400")
             window.configure(bg='#1a1a1a')
             window.attributes('-topmost', True)
@@ -598,9 +598,8 @@ class WhisperTray:
             pystray.MenuItem(f"  {'✓' if self.output_mode == 'english' else '  '} English", 
                            lambda: self.set_mode('english')),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
-            pystray.MenuItem(f"🐛 {'✓' if self.debug_enabled else '  '} Debug Panel", self.toggle_debug),
-            pystray.MenuItem("Show Debug Panel", self.show_debug_panel, enabled=self.debug_enabled),
-            pystray.MenuItem(f"📊 {'✓' if self.session_summary_enabled else '  '} Session Summary", self.toggle_session_summary),
+            pystray.MenuItem(f"🐛 {'✓' if self.debug_enabled else '  '} Enable and Display Debug Panel", self.toggle_debug),
+            pystray.MenuItem(f"📊 {'✓' if self.session_summary_enabled else '  '} Session Log Summary", self.toggle_session_summary),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
             pystray.MenuItem("🟢 Ready | 🔴 Recording | 🔵 Processing", lambda: None, enabled=False),
             pystray.MenuItem("━━━━━━━━━━", lambda: None, enabled=False),
@@ -1076,10 +1075,10 @@ Do NOT translate to pure English. Keep the code-switching intact."""
                 # Paste
                 if text:
                     self.log(f"Text ready to paste: {text[:50]}...", "info")
-                    # Show toast with text preview
-                    self.show_toast(text)
+                    # Toast disabled - still causing Windows cursor handle error
+                    # self.show_toast(text)
                     # Small delay before pasting
-                    time.sleep(1)
+                    time.sleep(0.5)
                     paste_success = self.paste_text(text)
                     
                     if self.current_session:
