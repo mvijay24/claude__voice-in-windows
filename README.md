@@ -139,6 +139,14 @@ Settings are automatically saved in `settings.json`:
 - Approximately $0.006 per minute of audio
 - See [OpenAI Pricing](https://openai.com/pricing)
 
+## 💡 Why "Toast"?
+
+The small popup notification that shows transcribed text is called a "toast" because:
+- It "pops up" like bread from a toaster
+- It appears briefly and then disappears
+- Common UI term from Android/Windows for temporary notifications
+- Shows at the corner of the screen without interrupting workflow
+
 ## 🤝 Contributing
 
 Feel free to open issues or submit pull requests!
