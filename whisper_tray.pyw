@@ -816,14 +816,11 @@ class WhisperTray:
             
             # Different prompts based on mode
             if self.output_mode == 'hinglish':
-                prompt = """Transcribe this Hinglish audio (mixed Hindi-English). 
-The speaker is mixing Hindi and English words. Transcribe exactly as spoken in Roman script.
-Keep all Hindi words as they sound in Roman letters.
-Examples: bhai, kya, kar, rahe, ho, acha, theek, hai, nahi, jaldi, bhej, de, yaar, matlab
-Do NOT translate to pure English. Keep the code-switching intact."""
-                language = 'en'  # Use English for better Roman script output
+                # Simpler prompt for better results
+                prompt = "Hindi-English mixed speech. Keep Hindi words in Roman script."
+                language = 'hi'  # Hindi language for better Hinglish recognition
             else:
-                prompt = "Transcribe and translate this to English."
+                prompt = ""  # Empty prompt for translation mode
                 language = 'en'  # English for translation
             
             self.log(f"Sending API request to OpenAI Whisper", "debug")
