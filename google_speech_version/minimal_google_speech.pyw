@@ -114,7 +114,8 @@ def get_html_content():
         let isRecording = false;
         let finalText = '';
         let restartTimer = null;
-        let retryCount = 0;
+        let periodicRestartTimer = null;
+        let lastActivityTime = Date.now();
         
         // Initialize
         function init() {
@@ -133,19 +134,23 @@ def get_html_content():
                 console.log('Started');
                 document.getElementById('status').className = 'listening';
                 document.getElementById('status').textContent = '🔴 Listening...';
-                retryCount = 0;
+                lastActivityTime = Date.now();
                 
-                // Auto-restart before 60s limit
+                // Clear existing timers
                 clearTimeout(restartTimer);
-                restartTimer = setTimeout(() => {
+                clearInterval(periodicRestartTimer);
+                
+                // Restart every 10 seconds to prevent timeout
+                periodicRestartTimer = setInterval(() => {
                     if (isRecording) {
-                        console.log('Restarting before timeout');
+                        console.log('Periodic restart to prevent timeout');
                         recognition.stop();
                     }
-                }, 55000);
+                }, 10000); // 10 second intervals
             };
             
             recognition.onresult = (event) => {
+                lastActivityTime = Date.now();
                 let interim = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const transcript = event.results[i][0].transcript;
@@ -162,25 +167,15 @@ def get_html_content():
             
             recognition.onerror = (event) => {
                 console.error('Error:', event.error);
-                if (event.error === 'no-speech') {
-                    // Ignore no-speech, keep recording
-                    return;
-                }
-                if (event.error === 'network' && retryCount < 3) {
-                    retryCount++;
-                    setTimeout(() => {
-                        if (isRecording) recognition.start();
-                    }, 1000);
-                }
-            };
-            
-            recognition.onend = () => {
-                console.log('Ended');
-                clearTimeout(restartTimer);
                 
-                if (isRecording) {
-                    // Auto-restart immediately
-                    setTimeout(() => {
+                // Handle all errors by restarting
+                if (isRecording && event.error !== 'aborted') {
+                    console.log('Error occurred, restarting...');
+                    clearTimeout(restartTimer);
+                    clearInterval(periodicRestartTimer);
+                    
+                    // Restart after short delay
+                    restartTimer = setTimeout(() => {
                         if (isRecording) {
                             try {
                                 recognition.start();
@@ -188,7 +183,26 @@ def get_html_content():
                                 console.error('Restart error:', e);
                             }
                         }
-                    }, 100);
+                    }, 200);
+                }
+            };
+            
+            recognition.onend = () => {
+                console.log('Ended');
+                clearTimeout(restartTimer);
+                clearInterval(periodicRestartTimer);
+                
+                if (isRecording) {
+                    // Auto-restart immediately
+                    restartTimer = setTimeout(() => {
+                        if (isRecording) {
+                            try {
+                                recognition.start();
+                            } catch(e) {
+                                console.error('Restart error:', e);
+                            }
+                        }
+                    }, 50); // Very quick restart
                 } else {
                     document.getElementById('status').className = 'stopped';
                     document.getElementById('status').textContent = 'Stopped';
@@ -211,6 +225,7 @@ def get_html_content():
         function stopRec() {
             isRecording = false;
             clearTimeout(restartTimer);
+            clearInterval(periodicRestartTimer);
             if (recognition) recognition.stop();
         }
         
