@@ -81,8 +81,11 @@ def get_html_content():
             padding: 20px;
             border-radius: 10px;
             min-height: 150px;
+            max-height: 400px;
+            overflow-y: auto;
             font-size: 18px;
             line-height: 1.5;
+            white-space: pre-wrap;
         }
         #controls {
             text-align: center;
@@ -106,7 +109,11 @@ def get_html_content():
     <div id="controls">
         <button class="start" onclick="startRec()">Start (Ctrl+Space)</button>
         <button class="stop" onclick="stopRec()">Stop</button>
+        <button class="stop" onclick="clearText()" style="background: #FF9800;">Clear Text</button>
     </div>
+    <p style="text-align: center; color: #888; font-size: 14px; margin: 10px 0;">
+        📝 Text will keep adding (append mode) • Use "Clear Text" to reset
+    </p>
     <div id="transcript"></div>
     
     <script>
@@ -154,17 +161,25 @@ def get_html_content():
             recognition.onresult = (event) => {
                 lastActivityTime = Date.now();
                 let interim = '';
+                
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const transcript = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
-                        finalText = transcript;
+                        // Append to finalText instead of replacing
+                        finalText += transcript + ' ';
                         // Send to Python
                         fetch('/transcript?text=' + encodeURIComponent(transcript));
                     } else {
                         interim = transcript;
                     }
                 }
-                document.getElementById('transcript').textContent = finalText || interim;
+                
+                // Show accumulated final text + current interim text
+                const transcriptEl = document.getElementById('transcript');
+                transcriptEl.innerHTML = 
+                    finalText + '<span style="color: #888;">' + interim + '</span>';
+                // Auto-scroll to bottom
+                transcriptEl.scrollTop = transcriptEl.scrollHeight;
             };
             
             recognition.onerror = (event) => {
@@ -231,8 +246,9 @@ def get_html_content():
         function startRec() {
             if (!recognition) init();
             isRecording = true;
-            finalText = '';
-            document.getElementById('transcript').textContent = '';
+            // Don't clear finalText here - let it accumulate
+            // finalText = '';
+            // document.getElementById('transcript').textContent = '';
             try {
                 recognition.start();
             } catch(e) {
@@ -245,6 +261,11 @@ def get_html_content():
             clearTimeout(restartTimer);
             clearInterval(periodicRestartTimer);
             if (recognition) recognition.stop();
+        }
+        
+        function clearText() {
+            finalText = '';
+            document.getElementById('transcript').textContent = '';
         }
         
         // Listen for commands from Python
