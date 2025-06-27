@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Speech Recognition - Standalone</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        
+        .container {
+            background: #161b22;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #58a6ff;
+            margin-bottom: 30px;
+        }
+        
+        #status {
+            text-align: center;
+            font-size: 24px;
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .ready { background: #1f6feb; }
+        .listening { 
+            background: #da3633; 
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 30px 0;
+        }
+        
+        button {
+            padding: 12px 30px;
+            font-size: 18px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .start {
+            background: #238636;
+            color: white;
+        }
+        
+        .stop {
+            background: #da3633;
+            color: white;
+        }
+        
+        .copy {
+            background: #1f6feb;
+            color: white;
+        }
+        
+        #output {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 150px;
+            font-size: 18px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            margin: 20px 0;
+        }
+        
+        .info {
+            background: #1f2937;
+            border-left: 4px solid #58a6ff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #58a6ff;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #8b949e;
+            margin-top: 5px;
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #238636;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            transform: translateY(100px);
+            transition: transform 0.3s ease;
+        }
+        
+        .toast.show {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Google Speech Recognition</h1>
+        
+        <div id="status" class="ready">Ready - Click Start or press Space</div>
+        
+        <div class="controls">
+            <button class="start" onclick="startRecognition()">▶️ Start (Space)</button>
+            <button class="stop" onclick="stopRecognition()">⏹️ Stop (Esc)</button>
+            <button class="copy" onclick="copyText()">📋 Copy All (Ctrl+C)</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="sessionTime">0:00</div>
+                <div class="stat-label">Session Time</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="wordCount">0</div>
+                <div class="stat-label">Words</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="restartCount">0</div>
+                <div class="stat-label">Auto-Restarts</div>
+            </div>
+        </div>
+        
+        <div id="output"></div>
+        
+        <div class="info">
+            <strong>💡 Pro Tips:</strong><br>
+            • Auto-restarts every 55 seconds (before Google's 60s limit)<br>
+            • Continues through silence - no 7-10s timeout!<br>
+            • Press <kbd>Space</kbd> to start, <kbd>Esc</kbd> to stop<br>
+            • <kbd>Ctrl+C</kbd> copies all text instantly<br>
+            • Works best with Hindi-English (Hinglish) speech
+        </div>
+    </div>
+    
+    <div id="toast" class="toast">Text copied to clipboard!</div>
+    
+    <script>
+        let recognition = null;
+        let isRecording = false;
+        let fullTranscript = '';
+        let sessionTimer = null;
+        let sessionStart = null;
+        let restartCount = 0;
+        let autoRestartTimer = null;
+        
+        // Initialize speech recognition
+        function initRecognition() {
+            if (!('webkitSpeechRecognition' in window)) {
+                alert('Your browser does not support Web Speech API. Please use Chrome or Edge.');
+                return false;
+            }
+            
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'hi-IN'; // Hindi-India for Hinglish
+            
+            recognition.onstart = () => {
+                console.log('Recognition started');
+                isRecording = true;
+                document.getElementById('status').className = 'listening';
+                document.getElementById('status').textContent = '🔴 Listening... (Speak now)';
+                
+                if (!sessionStart) {
+                    sessionStart = Date.now();
+                    startSessionTimer();
+                }
+                
+                // Schedule restart before 60-second limit
+                clearTimeout(autoRestartTimer);
+                autoRestartTimer = setTimeout(() => {
+                    if (isRecording) {
+                        console.log('Auto-restarting before timeout...');
+                        restartCount++;
+                        document.getElementById('restartCount').textContent = restartCount;
+                        recognition.stop();
+                        // onend will trigger restart
+                    }
+                }, 55000); // 55 seconds
+            };
+            
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    
+                    if (event.results[i].isFinal) {
+                        fullTranscript += transcript + ' ';
+                        // Auto-copy on each final result
+                        navigator.clipboard.writeText(fullTranscript.trim()).catch(err => {
+                            console.error('Copy failed:', err);
+                        });
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                // Update display
+                document.getElementById('output').textContent = fullTranscript + interimTranscript;
+                updateWordCount();
+                
+                // Auto-scroll
+                const output = document.getElementById('output');
+                output.scrollTop = output.scrollHeight;
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Recognition error:', event.error);
+                
+                // Ignore no-speech errors
+                if (event.error === 'no-speech') {
+                    console.log('No speech detected, continuing...');
+                    return;
+                }
+                
+                // Handle network errors with retry
+                if (event.error === 'network') {
+                    console.log('Network error, retrying...');
+                    setTimeout(() => {
+                        if (isRecording) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                console.error('Retry failed:', e);
+                            }
+                        }
+                    }, 1000);
+                }
+            };
+            
+            recognition.onend = () => {
+                console.log('Recognition ended');
+                clearTimeout(autoRestartTimer);
+                
+                if (isRecording) {
+                    // Immediate restart
+                    console.log('Restarting recognition...');
+                    setTimeout(() => {
+                        if (isRecording) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                console.error('Restart error:', e);
+                            }
+                        }
+                    }, 100); // 100ms delay
+                } else {
+                    // User stopped
+                    document.getElementById('status').className = 'ready';
+                    document.getElementById('status').textContent = 'Stopped - Click Start or press Space';
+                    stopSessionTimer();
+                }
+            };
+            
+            return true;
+        }
+        
+        function startRecognition() {
+            if (!recognition && !initRecognition()) {
+                return;
+            }
+            
+            isRecording = true;
+            restartCount = 0;
+            document.getElementById('restartCount').textContent = '0';
+            
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error('Start error:', e);
+                // Already started, ignore
+            }
+        }
+        
+        function stopRecognition() {
+            isRecording = false;
+            clearTimeout(autoRestartTimer);
+            
+            if (recognition) {
+                recognition.stop();
+            }
+        }
+        
+        function copyText() {
+            const text = fullTranscript.trim();
+            if (!text) {
+                showToast('No text to copy!');
+                return;
+            }
+            
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Text copied to clipboard!');
+            }).catch(err => {
+                // Fallback method
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast('Text copied to clipboard!');
+            });
+        }
+        
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+        
+        function startSessionTimer() {
+            sessionTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('sessionTime').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+        
+        function stopSessionTimer() {
+            clearInterval(sessionTimer);
+            sessionStart = null;
+        }
+        
+        function updateWordCount() {
+            const words = fullTranscript.trim().split(/\s+/).filter(w => w.length > 0);
+            document.getElementById('wordCount').textContent = words.length;
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !isRecording && e.target.tagName !== 'BUTTON') {
+                e.preventDefault();
+                startRecognition();
+            } else if (e.code === 'Escape' && isRecording) {
+                e.preventDefault();
+                stopRecognition();
+            } else if (e.ctrlKey && e.code === 'KeyC' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                copyText();
+            }
+        });
+        
+        // Initialize on load
+        window.onload = () => {
+            initRecognition();
+            
+            // Focus on page for keyboard shortcuts
+            document.body.focus();
+        };
+        
+        // Prevent accidental close
+        window.onbeforeunload = (e) => {
+            if (isRecording || fullTranscript.trim()) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Speech Test</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 40px;
+            background: #1a1a1a;
+            color: white;
+            text-align: center;
+        }
+        button {
+            font-size: 30px;
+            padding: 20px 40px;
+            margin: 20px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+        }
+        #output {
+            margin-top: 30px;
+            padding: 20px;
+            background: #2a2a2a;
+            border-radius: 10px;
+            min-height: 100px;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Quick Speech Test</h1>
+    <button onclick="startTest()">Click to Test Speech Recognition</button>
+    <div id="output">Click button and speak...</div>
+    
+    <script>
+        function startTest() {
+            if (!('webkitSpeechRecognition' in window)) {
+                alert('Please use Chrome or Edge browser');
+                return;
+            }
+            
+            const recognition = new webkitSpeechRecognition();
+            recognition.lang = 'hi-IN';
+            recognition.interimResults = true;
+            
+            recognition.onresult = (event) => {
+                let text = '';
+                for (let i = 0; i < event.results.length; i++) {
+                    text += event.results[i][0].transcript;
+                }
+                document.getElementById('output').textContent = text;
+                
+                // Auto-copy
+                if (event.results[event.results.length - 1].isFinal) {
+                    navigator.clipboard.writeText(text);
+                }
+            };
+            
+            recognition.start();
+            document.getElementById('output').textContent = 'Listening... Speak now!';
+        }
+    </script>
+</body>
+</html>

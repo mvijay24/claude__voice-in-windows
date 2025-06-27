@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Speech Recognition Engine</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        #status {
+            font-size: 24px;
+            margin: 20px 0;
+        }
+        #transcript {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            min-height: 100px;
+            margin: 20px 0;
+            white-space: pre-wrap;
+        }
+        .listening { color: #4CAF50; }
+        .stopped { color: #f44336; }
+        .processing { color: #2196F3; }
+        #debug {
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Google Speech Recognition Engine</h1>
+    <div id="status" class="stopped">Ready</div>
+    <div id="transcript"></div>
+    <div id="debug"></div>
+    
+    <script>
+        let recognition = null;
+        let isRecording = false;
+        let finalTranscript = '';
+        let interimTranscript = '';
+        let restartTimer = null;
+        let sessionStartTime = null;
+        let autoRestartCount = 0;
+        let silenceTimer = null;
+        let lastSpeechTime = Date.now();
+        
+        // Configuration
+        const MAX_SESSION_TIME = 55000; // 55 seconds (before 60s limit)
+        const SILENCE_TIMEOUT = 5000; // 5 seconds of silence
+        const AUTO_RESTART_DELAY = 100; // Quick restart
+        
+        function log(message) {
+            const debug = document.getElementById('debug');
+            const time = new Date().toLocaleTimeString();
+            debug.innerHTML = `[${time}] ${message}<br>` + debug.innerHTML;
+            console.log(message);
+        }
+        
+        function initRecognition() {
+            if (!('webkitSpeechRecognition' in window)) {
+                log('ERROR: Web Speech API not supported');
+                return;
+            }
+            
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'hi-IN'; // Hindi-India for better Hinglish support
+            
+            recognition.onstart = () => {
+                log('Recognition started');
+                document.getElementById('status').className = 'listening';
+                document.getElementById('status').textContent = 'Listening...';
+                sessionStartTime = Date.now();
+                autoRestartCount = 0;
+                
+                // Set timer to restart before 60-second limit
+                restartTimer = setTimeout(() => {
+                    log('Restarting before timeout limit');
+                    restartRecognition();
+                }, MAX_SESSION_TIME);
+            };
+            
+            recognition.onresult = (event) => {
+                lastSpeechTime = Date.now();
+                clearTimeout(silenceTimer);
+                
+                interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript + ' ';
+                        // Send to Python app
+                        window.pywebview.api.on_transcript(transcript);
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                document.getElementById('transcript').textContent = 
+                    finalTranscript + interimTranscript;
+                
+                // Reset silence timer
+                silenceTimer = setTimeout(() => {
+                    log('Silence detected, continuing...');
+                    // Don't stop, just log
+                }, SILENCE_TIMEOUT);
+            };
+            
+            recognition.onerror = (event) => {
+                log(`Error: ${event.error}`);
+                clearTimeout(restartTimer);
+                clearTimeout(silenceTimer);
+                
+                if (event.error === 'no-speech') {
+                    log('No speech detected, restarting...');
+                    setTimeout(() => restartRecognition(), AUTO_RESTART_DELAY);
+                } else if (event.error === 'network') {
+                    log('Network error, retrying...');
+                    setTimeout(() => restartRecognition(), 1000);
+                } else if (event.error === 'aborted') {
+                    log('Recognition aborted');
+                }
+            };
+            
+            recognition.onend = () => {
+                log('Recognition ended');
+                clearTimeout(restartTimer);
+                clearTimeout(silenceTimer);
+                
+                if (isRecording) {
+                    autoRestartCount++;
+                    log(`Auto-restarting (count: ${autoRestartCount})`);
+                    setTimeout(() => {
+                        if (isRecording) {
+                            recognition.start();
+                        }
+                    }, AUTO_RESTART_DELAY);
+                } else {
+                    document.getElementById('status').className = 'stopped';
+                    document.getElementById('status').textContent = 'Stopped';
+                }
+            };
+        }
+        
+        function startRecognition() {
+            if (!recognition) {
+                initRecognition();
+            }
+            
+            isRecording = true;
+            finalTranscript = '';
+            interimTranscript = '';
+            document.getElementById('transcript').textContent = '';
+            
+            try {
+                recognition.start();
+                log('Starting recognition...');
+            } catch (e) {
+                log(`Start error: ${e.message}`);
+                // Already started, just continue
+            }
+        }
+        
+        function stopRecognition() {
+            isRecording = false;
+            clearTimeout(restartTimer);
+            clearTimeout(silenceTimer);
+            
+            if (recognition) {
+                recognition.stop();
+                log('Stopping recognition...');
+            }
+        }
+        
+        function restartRecognition() {
+            if (!isRecording) return;
+            
+            log('Restarting recognition session...');
+            recognition.stop();
+            // onend will trigger auto-restart
+        }
+        
+        // Expose functions to Python
+        window.startRecording = startRecognition;
+        window.stopRecording = stopRecognition;
+        
+        // Initialize on load
+        window.onload = () => {
+            log('Speech recognition engine ready');
+            initRecognition();
+        };
+    </script>
+</body>
+</html>
