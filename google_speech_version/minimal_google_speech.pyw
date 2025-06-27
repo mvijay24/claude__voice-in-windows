@@ -116,8 +116,9 @@ def get_html_content():
         let restartTimer = null;
         let periodicRestartTimer = null;
         let lastActivityTime = Date.now();
+        let isRestarting = false;
         
-        // Initialize
+        // Pre-initialize recognition for faster restarts
         function init() {
             if (!('webkitSpeechRecognition' in window)) {
                 alert('Browser does not support Web Speech API');
@@ -142,9 +143,10 @@ def get_html_content():
                 
                 // Restart every 10 seconds to prevent timeout
                 periodicRestartTimer = setInterval(() => {
-                    if (isRecording) {
+                    if (isRecording && !isRestarting) {
                         console.log('Periodic restart to prevent timeout');
-                        recognition.stop();
+                        isRestarting = true;
+                        recognition.abort(); // abort() is faster than stop()
                     }
                 }, 10000); // 10 second intervals
             };
@@ -193,19 +195,35 @@ def get_html_content():
                 clearInterval(periodicRestartTimer);
                 
                 if (isRecording) {
-                    // Auto-restart immediately
-                    restartTimer = setTimeout(() => {
-                        if (isRecording) {
-                            try {
-                                recognition.start();
-                            } catch(e) {
-                                console.error('Restart error:', e);
-                            }
+                    // Instant restart - no delay needed
+                    if (isRestarting) {
+                        // This was a planned restart, do it instantly
+                        isRestarting = false;
+                        try {
+                            recognition.start();
+                        } catch(e) {
+                            console.error('Instant restart error:', e);
+                            // Fallback with minimal delay
+                            setTimeout(() => {
+                                try { recognition.start(); } catch(e2) {}
+                            }, 10);
                         }
-                    }, 50); // Very quick restart
+                    } else {
+                        // Unexpected end, use tiny delay for stability
+                        setTimeout(() => {
+                            if (isRecording) {
+                                try {
+                                    recognition.start();
+                                } catch(e) {
+                                    console.error('Restart error:', e);
+                                }
+                            }
+                        }, 10); // Minimal 10ms delay
+                    }
                 } else {
                     document.getElementById('status').className = 'stopped';
                     document.getElementById('status').textContent = 'Stopped';
+                    isRestarting = false;
                 }
             };
         }
@@ -242,7 +260,24 @@ def get_html_content():
         }
         
         // Initialize on load
-        window.onload = init;
+        window.onload = function() {
+            init();
+            
+            // Pre-warm the recognition engine after 500ms
+            setTimeout(() => {
+                if (!isRecording && recognition) {
+                    try {
+                        // Start and immediately abort to warm up
+                        recognition.start();
+                        setTimeout(() => {
+                            if (!isRecording) recognition.abort();
+                        }, 100);
+                    } catch(e) {
+                        console.log('Pre-warm skipped:', e.message);
+                    }
+                }
+            }, 500);
+        };
     </script>
 </body>
 </html>'''
