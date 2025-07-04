@@ -1,0 +1,20 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 8899
+    },
+    "speech": {
+        "language": "hi-IN",
+        "restart_interval": 10
+    },
+    "logging": {
+        "enabled": true,
+        "level": "INFO"
+    },
+    "features": {
+        "auto_start": true,
+        "pre_warm": true,
+        "tray_icon": true,
+        "browser_auto_open": true
+    }
+}

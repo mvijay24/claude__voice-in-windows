@@ -1,0 +1,14 @@
+# Google Speech Recognition - Reimplemented Requirements
+# Following Development Guidelines
+
+# Core dependencies
+pyperclip>=1.8.2      # Clipboard operations
+keyboard>=0.13.5      # Hotkey handling
+pystray>=0.19.4       # System tray icon
+Pillow>=9.0.0         # Image processing for tray icon
+
+# Testing dependencies (for E2E tests)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+selenium>=4.0.0       # For browser automation in E2E tests
+requests>=2.28.0      # For API testing
